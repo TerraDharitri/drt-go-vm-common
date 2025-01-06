@@ -2,7 +2,6 @@ package builtInFunctions
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"math/big"
 	"sync"
@@ -15,18 +14,15 @@ import (
 
 type dcdtNFTMultiTransfer struct {
 	baseActiveHandler
-	keyPrefix             []byte
-	marshaller            vmcommon.Marshalizer
-	globalSettingsHandler vmcommon.ExtendedDCDTGlobalSettingsHandler
-	payableHandler        vmcommon.PayableChecker
-	funcGasCost           uint64
-	accounts              vmcommon.AccountsAdapter
-	shardCoordinator      vmcommon.Coordinator
-	gasConfig             vmcommon.BaseOperationCost
-	mutExecution          sync.RWMutex
-	dcdtStorageHandler    vmcommon.DCDTNFTStorageHandler
-	rolesHandler          vmcommon.DCDTRoleHandler
-	enableEpochsHandler   vmcommon.EnableEpochsHandler
+	*baseComponentsHolder
+	keyPrefix      []byte
+	payableHandler vmcommon.PayableChecker
+	funcGasCost    uint64
+	accounts       vmcommon.AccountsAdapter
+	gasConfig      vmcommon.BaseOperationCost
+	mutExecution   sync.RWMutex
+	rolesHandler   vmcommon.DCDTRoleHandler
+	baseTokenID    []byte
 }
 
 const argumentsPerTransfer = uint64(3)
@@ -35,7 +31,7 @@ const argumentsPerTransfer = uint64(3)
 func NewDCDTNFTMultiTransferFunc(
 	funcGasCost uint64,
 	marshaller vmcommon.Marshalizer,
-	globalSettingsHandler vmcommon.ExtendedDCDTGlobalSettingsHandler,
+	globalSettingsHandler vmcommon.GlobalMetadataHandler,
 	accounts vmcommon.AccountsAdapter,
 	shardCoordinator vmcommon.Coordinator,
 	gasConfig vmcommon.BaseOperationCost,
@@ -66,18 +62,21 @@ func NewDCDTNFTMultiTransferFunc(
 	}
 
 	e := &dcdtNFTMultiTransfer{
-		keyPrefix:             []byte(baseDCDTKeyPrefix),
-		marshaller:            marshaller,
-		globalSettingsHandler: globalSettingsHandler,
-		funcGasCost:           funcGasCost,
-		accounts:              accounts,
-		shardCoordinator:      shardCoordinator,
-		gasConfig:             gasConfig,
-		mutExecution:          sync.RWMutex{},
-		payableHandler:        &disabledPayableHandler{},
-		rolesHandler:          roleHandler,
-		dcdtStorageHandler:    dcdtStorageHandler,
-		enableEpochsHandler:   enableEpochsHandler,
+		keyPrefix:      []byte(baseDCDTKeyPrefix),
+		funcGasCost:    funcGasCost,
+		accounts:       accounts,
+		gasConfig:      gasConfig,
+		mutExecution:   sync.RWMutex{},
+		payableHandler: &disabledPayableHandler{},
+		rolesHandler:   roleHandler,
+		baseComponentsHolder: &baseComponentsHolder{
+			dcdtStorageHandler:    dcdtStorageHandler,
+			globalSettingsHandler: globalSettingsHandler,
+			shardCoordinator:      shardCoordinator,
+			enableEpochsHandler:   enableEpochsHandler,
+			marshaller:            marshaller,
+		},
+		baseTokenID: []byte(vmcommon.MOAIdentifier),
 	}
 
 	e.baseActiveHandler.activeHandler = func() bool {
@@ -194,14 +193,21 @@ func (e *dcdtNFTMultiTransfer) ProcessBuiltinFunction(
 				dcdtTransferData,
 				dcdtTokenKey,
 				nonce,
-				vmInput.ReturnCallAfterError)
+				vmInput.ReturnCallAfterError,
+			)
 			if err != nil {
 				return nil, fmt.Errorf("%w for token %s", err, string(tokenID))
 			}
 		} else {
 			transferredValue := big.NewInt(0).SetBytes(vmInput.Arguments[tokenStartIndex+2])
 			value.Set(transferredValue)
-			err = addToDCDTBalance(acntDst, dcdtTokenKey, transferredValue, e.marshaller, e.globalSettingsHandler, vmInput.ReturnCallAfterError)
+
+			if bytes.Equal(e.baseTokenID, tokenID) {
+				err = acntDst.AddToBalance(transferredValue)
+			} else {
+				err = addToDCDTBalance(acntDst, dcdtTokenKey, transferredValue, e.marshaller, e.globalSettingsHandler, vmInput.ReturnCallAfterError)
+			}
+
 			if err != nil {
 				return nil, fmt.Errorf("%w for token %s", err, string(tokenID))
 			}
@@ -279,8 +285,9 @@ func (e *dcdtNFTMultiTransfer) processDCDTNFTMultiTransferOnSenderShard(
 		return nil, fmt.Errorf("%w, invalid number of arguments", ErrInvalidArguments)
 	}
 
+	skipGasUse := noGasUseIfReturnCallAfterErrorWithFlag(e.enableEpochsHandler, vmInput)
 	multiTransferCost := numOfTransfers * e.funcGasCost
-	if vmInput.GasProvided < multiTransferCost {
+	if vmInput.GasProvided < multiTransferCost && !skipGasUse {
 		return nil, ErrNotEnoughGas
 	}
 
@@ -298,7 +305,7 @@ func (e *dcdtNFTMultiTransfer) processDCDTNFTMultiTransferOnSenderShard(
 
 	vmOutput := &vmcommon.VMOutput{
 		ReturnCode:   vmcommon.Ok,
-		GasRemaining: vmInput.GasProvided - multiTransferCost,
+		GasRemaining: computeGasRemainingIfNeeded(acntSnd, vmInput.GasProvided, multiTransferCost, skipGasUse),
 		Logs:         make([]*vmcommon.LogEntry, 0, numOfTransfers),
 	}
 
@@ -370,12 +377,48 @@ func (e *dcdtNFTMultiTransfer) processDCDTNFTMultiTransferOnSenderShard(
 		}
 	}
 
-	err = e.createDCDTNFTOutputTransfers(vmInput, vmOutput, listDcdtData, listTransferData, dstAddress)
+	err = e.createDCDTNFTOutputTransfers(vmInput, vmOutput, listDcdtData, listTransferData, dstAddress, skipGasUse)
 	if err != nil {
 		return nil, err
 	}
 
 	return vmOutput, nil
+}
+
+func (e *dcdtNFTMultiTransfer) transferBaseToken(
+	acntSnd vmcommon.UserAccountHandler,
+	acntDst vmcommon.UserAccountHandler,
+	transferData *vmcommon.DCDTTransfer,
+) (*dcdt.DCDigitalToken, error) {
+	if !e.enableEpochsHandler.IsFlagEnabled(MOAInDCDTMultiTransferFlag) {
+		// do not enable this flag on SovereignShards - there is no need for that, as base token is already an DCDT
+		return nil, computeInsufficientQuantityDCDTError(transferData.DCDTTokenName, transferData.DCDTTokenNonce)
+	}
+
+	if transferData.DCDTTokenNonce != 0 ||
+		transferData.DCDTTokenType != uint32(core.Fungible) {
+		return nil, ErrInvalidNonce
+	}
+
+	if !check.IfNil(acntSnd) {
+		err := acntSnd.SubFromBalance(transferData.DCDTValue)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if !check.IfNil(acntDst) {
+		err := acntDst.AddToBalance(transferData.DCDTValue)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	baseDCDTData := &dcdt.DCDigitalToken{
+		Type:  0,
+		Value: big.NewInt(0).Set(transferData.DCDTValue),
+	}
+	return baseDCDTData, nil
 }
 
 func (e *dcdtNFTMultiTransfer) transferOneTokenOnSenderShard(
@@ -389,6 +432,10 @@ func (e *dcdtNFTMultiTransfer) transferOneTokenOnSenderShard(
 		return nil, ErrInvalidNFTQuantity
 	}
 
+	if bytes.Equal(transferData.DCDTTokenName, e.baseTokenID) {
+		return e.transferBaseToken(acntSnd, acntDst, transferData)
+	}
+
 	dcdtTokenKey := append(e.keyPrefix, transferData.DCDTTokenName...)
 	dcdtData, err := e.dcdtStorageHandler.GetDCDTNFTTokenOnSender(acntSnd, dcdtTokenKey, transferData.DCDTTokenNonce)
 	if err != nil {
@@ -400,7 +447,12 @@ func (e *dcdtNFTMultiTransfer) transferOneTokenOnSenderShard(
 	}
 	dcdtData.Value.Sub(dcdtData.Value, transferData.DCDTValue)
 
-	_, err = e.dcdtStorageHandler.SaveDCDTNFTToken(acntSnd.AddressBytes(), acntSnd, dcdtTokenKey, transferData.DCDTTokenNonce, dcdtData, false, isReturnCallWithError)
+	properties := vmcommon.NftSaveArgs{
+		MustUpdateAllFields:         false,
+		IsReturnWithError:           isReturnCallWithError,
+		KeepMetaDataOnZeroLiquidity: false,
+	}
+	_, err = e.dcdtStorageHandler.SaveDCDTNFTToken(acntSnd.AddressBytes(), acntSnd, dcdtTokenKey, transferData.DCDTTokenNonce, dcdtData, properties)
 	if err != nil {
 		return nil, err
 	}
@@ -418,12 +470,25 @@ func (e *dcdtNFTMultiTransfer) transferOneTokenOnSenderShard(
 	}
 
 	if !check.IfNil(acntDst) {
-		err = e.addNFTToDestination(acntSnd.AddressBytes(), dstAddress, acntDst, dcdtData, dcdtTokenKey, transferData.DCDTTokenNonce, isReturnCallWithError)
+		err = e.addNFTToDestination(
+			acntSnd.AddressBytes(),
+			dstAddress,
+			acntDst,
+			dcdtData,
+			dcdtTokenKey,
+			transferData.DCDTTokenNonce,
+			isReturnCallWithError,
+		)
 		if err != nil {
 			return nil, err
 		}
 	} else {
-		err = e.dcdtStorageHandler.AddToLiquiditySystemAcc(dcdtTokenKey, transferData.DCDTTokenNonce, big.NewInt(0).Neg(transferData.DCDTValue))
+		keepMetadataOnZeroLiquidity, err := shouldKeepMetaDataOnZeroLiquidity(acntSnd, transferData.DCDTTokenName, dcdtData.Type, e.marshaller, e.enableEpochsHandler)
+		if err != nil {
+			return nil, err
+		}
+
+		err = e.dcdtStorageHandler.AddToLiquiditySystemAcc(dcdtTokenKey, dcdtData.Type, transferData.DCDTTokenNonce, big.NewInt(0).Neg(transferData.DCDTValue), keepMetadataOnZeroLiquidity)
 		if err != nil {
 			return nil, err
 		}
@@ -464,6 +529,7 @@ func (e *dcdtNFTMultiTransfer) createDCDTNFTOutputTransfers(
 	listDCDTData []*dcdt.DCDigitalToken,
 	listDCDTTransfers []*vmcommon.DCDTTransfer,
 	dstAddress []byte,
+	skipGasUse bool,
 ) error {
 	multiTransferCallArgs := make([][]byte, 0, argumentsPerTransfer*uint64(len(listDCDTTransfers))+1)
 	numTokenTransfer := big.NewInt(int64(len(listDCDTTransfers))).Bytes()
@@ -491,11 +557,13 @@ func (e *dcdtNFTMultiTransfer) createDCDTNFTOutputTransfers(
 					return err
 				}
 
-				gasForTransfer := uint64(len(marshaledNFTTransfer)) * e.gasConfig.DataCopyPerByte
-				if gasForTransfer > vmOutput.GasRemaining {
-					return ErrNotEnoughGas
+				if !skipGasUse {
+					gasForTransfer := uint64(len(marshaledNFTTransfer)) * e.gasConfig.DataCopyPerByte
+					if gasForTransfer > vmOutput.GasRemaining {
+						return ErrNotEnoughGas
+					}
+					vmOutput.GasRemaining -= gasForTransfer
 				}
-				vmOutput.GasRemaining -= gasForTransfer
 
 				multiTransferCallArgs = append(multiTransferCallArgs, marshaledNFTTransfer)
 			} else {
@@ -522,13 +590,11 @@ func (e *dcdtNFTMultiTransfer) createDCDTNFTOutputTransfers(
 		}
 		addNFTTransferToVMOutput(
 			1,
-			vmInput.CallerAddr,
 			dstAddress,
 			core.BuiltInFunctionMultiDCDTNFTTransfer,
 			multiTransferCallArgs,
-			vmInput.GasLocked,
 			gasToTransfer,
-			vmInput.CallType,
+			vmInput,
 			vmOutput,
 		)
 
@@ -550,42 +616,6 @@ func (e *dcdtNFTMultiTransfer) createDCDTNFTOutputTransfers(
 			vmInput.GasLocked,
 			vmInput.CallType,
 			vmOutput)
-	}
-
-	return nil
-}
-
-func (e *dcdtNFTMultiTransfer) addNFTToDestination(
-	sndAddress []byte,
-	dstAddress []byte,
-	userAccount vmcommon.UserAccountHandler,
-	dcdtDataToTransfer *dcdt.DCDigitalToken,
-	dcdtTokenKey []byte,
-	nonce uint64,
-	isReturnCallWithError bool,
-) error {
-	currentDCDTData, _, err := e.dcdtStorageHandler.GetDCDTNFTTokenOnDestination(userAccount, dcdtTokenKey, nonce)
-	if err != nil && !errors.Is(err, ErrNFTTokenDoesNotExist) {
-		return err
-	}
-	err = checkFrozeAndPause(dstAddress, dcdtTokenKey, currentDCDTData, e.globalSettingsHandler, isReturnCallWithError)
-	if err != nil {
-		return err
-	}
-
-	transferValue := big.NewInt(0).Set(dcdtDataToTransfer.Value)
-	dcdtDataToTransfer.Value.Add(dcdtDataToTransfer.Value, currentDCDTData.Value)
-	_, err = e.dcdtStorageHandler.SaveDCDTNFTToken(sndAddress, userAccount, dcdtTokenKey, nonce, dcdtDataToTransfer, false, isReturnCallWithError)
-	if err != nil {
-		return err
-	}
-
-	isSameShard := e.shardCoordinator.SameShard(sndAddress, dstAddress)
-	if !isSameShard {
-		err = e.dcdtStorageHandler.AddToLiquiditySystemAcc(dcdtTokenKey, nonce, transferValue)
-		if err != nil {
-			return err
-		}
 	}
 
 	return nil

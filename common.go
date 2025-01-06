@@ -33,6 +33,9 @@ const BuiltInFunctionDCDTTransferRoleDeleteAddress = "DCDTTransferRoleDeleteAddr
 // DCDTRoleBurnForAll represents the role for burn for all
 const DCDTRoleBurnForAll = "DCDTRoleBurnForAll"
 
+// MOAIdentifier represents the identifier for the MOA in case of a transfer with MultIDCDTNFTTransfer built-in function
+const MOAIdentifier = "MOA-000000"
+
 // ValidateToken - validates the token ID
 func ValidateToken(tokenID []byte) bool {
 	tokenIDLen := len(tokenID)

@@ -56,6 +56,12 @@ func getAllBuiltInFunctions() []string {
 		core.BuiltInFunctionSetGuardian,
 		core.BuiltInFunctionUnGuardAccount,
 		core.BuiltInFunctionGuardAccount,
+		core.DCDTMetaDataRecreate,
+		core.DCDTMetaDataUpdate,
+		core.DCDTSetNewURIs,
+		core.DCDTModifyCreator,
+		core.DCDTModifyRoyalties,
+		core.DCDTSetTokenType,
 	}
 }
 

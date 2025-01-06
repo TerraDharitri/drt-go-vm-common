@@ -81,7 +81,7 @@ type BlockchainHook interface {
 	// IsSmartContract returns whether the address points to a smart contract
 	IsSmartContract(address []byte) bool
 
-	// IsPayable checks weather the provided address can receive MOA or not
+	// IsPayable checks weather the provided address can receive DRT or not
 	IsPayable(sndAddress []byte, recvAddress []byte) (bool, error)
 
 	// SaveCompiledCode saves to cache and storage the compiled code
@@ -163,6 +163,7 @@ type UserAccountHandler interface {
 	GetRootHash() []byte
 	AccountDataHandler() AccountDataHandler
 	AddToBalance(value *big.Int) error
+	SubFromBalance(value *big.Int) error
 	GetBalance() *big.Int
 	ClaimDeveloperRewards([]byte) (*big.Int, error)
 	GetDeveloperReward() *big.Int
@@ -207,10 +208,17 @@ type DCDTGlobalSettingsHandler interface {
 
 // ExtendedDCDTGlobalSettingsHandler provides global settings functions for an DCDT token
 type ExtendedDCDTGlobalSettingsHandler interface {
-	IsPaused(dcdtTokenKey []byte) bool
-	IsLimitedTransfer(dcdtTokenKey []byte) bool
+	DCDTGlobalSettingsHandler
 	IsBurnForAll(dcdtTokenKey []byte) bool
 	IsSenderOrDestinationWithTransferRole(sender, destination, tokenID []byte) bool
+	IsInterfaceNil() bool
+}
+
+// GlobalMetadataHandler provides functions which handle global metadata
+type GlobalMetadataHandler interface {
+	ExtendedDCDTGlobalSettingsHandler
+	GetTokenType(dcdtTokenKey []byte) (uint32, error)
+	SetTokenType(dcdtTokenKey []byte, tokenType uint32) error
 	IsInterfaceNil() bool
 }
 
@@ -301,22 +309,31 @@ type DCDTTransferParser interface {
 	IsInterfaceNil() bool
 }
 
+// NftSaveArgs defines the arguments for saving nfts
+type NftSaveArgs struct {
+	MustUpdateAllFields         bool
+	IsReturnWithError           bool
+	KeepMetaDataOnZeroLiquidity bool
+}
+
 // DCDTNFTStorageHandler will handle the storage for the nft metadata
 type DCDTNFTStorageHandler interface {
-	SaveDCDTNFTToken(senderAddress []byte, acnt UserAccountHandler, dcdtTokenKey []byte, nonce uint64, dcdtData *dcdt.DCDigitalToken, mustUpdateAllFields bool, isReturnWithError bool) ([]byte, error)
+	SaveDCDTNFTToken(senderAddress []byte, acnt UserAccountHandler, dcdtTokenKey []byte, nonce uint64, dcdtData *dcdt.DCDigitalToken, saveArgs NftSaveArgs) ([]byte, error)
+	SaveMetaDataToSystemAccount(tokenKey []byte, nonce uint64, dcdtData *dcdt.DCDigitalToken) error
 	GetDCDTNFTTokenOnSender(acnt UserAccountHandler, dcdtTokenKey []byte, nonce uint64) (*dcdt.DCDigitalToken, error)
 	GetDCDTNFTTokenOnDestination(acnt UserAccountHandler, dcdtTokenKey []byte, nonce uint64) (*dcdt.DCDigitalToken, bool, error)
 	GetDCDTNFTTokenOnDestinationWithCustomSystemAccount(accnt UserAccountHandler, dcdtTokenKey []byte, nonce uint64, systemAccount UserAccountHandler) (*dcdt.DCDigitalToken, bool, error)
+	GetMetaDataFromSystemAccount([]byte, uint64) (*dcdt.DCDigitalToken, error)
 	WasAlreadySentToDestinationShardAndUpdateState(tickerID []byte, nonce uint64, dstAddress []byte) (bool, error)
-	SaveNFTMetaDataToSystemAccount(tx data.TransactionHandler) error
-	AddToLiquiditySystemAcc(dcdtTokenKey []byte, nonce uint64, transferValue *big.Int) error
+	SaveNFTMetaData(tx data.TransactionHandler) error
+	AddToLiquiditySystemAcc(dcdtTokenKey []byte, tokenType uint32, nonce uint64, transferValue *big.Int, keepMetadataOnZeroLiquidity bool) error
 	IsInterfaceNil() bool
 }
 
 // SimpleDCDTNFTStorageHandler will handle get of DCDT data and save metadata to system acc
 type SimpleDCDTNFTStorageHandler interface {
 	GetDCDTNFTTokenOnDestination(accnt UserAccountHandler, dcdtTokenKey []byte, nonce uint64) (*dcdt.DCDigitalToken, bool, error)
-	SaveNFTMetaDataToSystemAccount(tx data.TransactionHandler) error
+	SaveNFTMetaData(tx data.TransactionHandler) error
 	IsInterfaceNil() bool
 }
 
@@ -333,6 +350,7 @@ type BuiltInFunctionFactory interface {
 	NFTStorageHandler() SimpleDCDTNFTStorageHandler
 	BuiltInFunctionContainer() BuiltInFunctionContainer
 	SetPayableHandler(handler PayableHandler) error
+	SetBlockchainHook(handler BlockchainDataHook) error
 	CreateBuiltInFunctionContainer() error
 	IsInterfaceNil() bool
 }
@@ -380,5 +398,18 @@ type NextOutputTransferIndexProvider interface {
 	NextOutputTransferIndex() uint32
 	GetCrtTransferIndex() uint32
 	SetCrtTransferIndex(index uint32)
+	IsInterfaceNil() bool
+}
+
+// BlockchainDataProvider is an interface for getting blockchain data
+type BlockchainDataProvider interface {
+	SetBlockchainHook(BlockchainDataHook) error
+	CurrentRound() uint64
+	IsInterfaceNil() bool
+}
+
+// BlockchainDataHook is an interface for getting blockchain data
+type BlockchainDataHook interface {
+	CurrentRound() uint64
 	IsInterfaceNil() bool
 }

@@ -2,11 +2,30 @@ package builtInFunctions
 
 import (
 	"bytes"
+	"errors"
+	"fmt"
+	"math"
 
 	"github.com/TerraDharitri/drt-go-core/core"
 	"github.com/TerraDharitri/drt-go-core/core/check"
 	"github.com/TerraDharitri/drt-go-core/marshal"
 	vmcommon "github.com/TerraDharitri/drt-go-vm-common"
+)
+
+// DCDTTypeForGlobalSettingsHandler is needed because if 0 is retrieved from the global settings handler,
+// it means either that the type is not set or that the type is fungible. This will solve the ambiguity.
+type DCDTTypeForGlobalSettingsHandler uint32
+
+const (
+	notSet DCDTTypeForGlobalSettingsHandler = iota
+	fungible
+	nonFungible
+	nonFungibleV2
+	metaFungible
+	semiFungible
+	dynamicNFT
+	dynamicSFT
+	dynamicMeta
 )
 
 type dcdtGlobalSettings struct {
@@ -100,12 +119,12 @@ func (e *dcdtGlobalSettings) ProcessBuiltinFunction(
 }
 
 func (e *dcdtGlobalSettings) toggleSetting(dcdtTokenKey []byte) error {
-	systemSCAccount, err := e.getSystemAccount()
+	systemSCAccount, err := getSystemAccount(e.accounts)
 	if err != nil {
 		return err
 	}
 
-	dcdtMetaData, err := e.getGlobalMetadata(dcdtTokenKey)
+	dcdtMetaData, err := e.GetGlobalMetadata(dcdtTokenKey)
 	if err != nil {
 		return err
 	}
@@ -127,8 +146,8 @@ func (e *dcdtGlobalSettings) toggleSetting(dcdtTokenKey []byte) error {
 	return e.accounts.SaveAccount(systemSCAccount)
 }
 
-func (e *dcdtGlobalSettings) getSystemAccount() (vmcommon.UserAccountHandler, error) {
-	systemSCAccount, err := e.accounts.LoadAccount(vmcommon.SystemAccountAddress)
+func getSystemAccount(accounts vmcommon.AccountsAdapter) (vmcommon.UserAccountHandler, error) {
+	systemSCAccount, err := accounts.LoadAccount(vmcommon.SystemAccountAddress)
 	if err != nil {
 		return nil, err
 	}
@@ -143,7 +162,7 @@ func (e *dcdtGlobalSettings) getSystemAccount() (vmcommon.UserAccountHandler, er
 
 // IsPaused returns true if the dcdtTokenKey (prefixed) is paused
 func (e *dcdtGlobalSettings) IsPaused(dcdtTokenKey []byte) bool {
-	dcdtMetadata, err := e.getGlobalMetadata(dcdtTokenKey)
+	dcdtMetadata, err := e.GetGlobalMetadata(dcdtTokenKey)
 	if err != nil {
 		return false
 	}
@@ -153,7 +172,7 @@ func (e *dcdtGlobalSettings) IsPaused(dcdtTokenKey []byte) bool {
 
 // IsLimitedTransfer returns true if the dcdtTokenKey (prefixed) is with limited transfer
 func (e *dcdtGlobalSettings) IsLimitedTransfer(dcdtTokenKey []byte) bool {
-	dcdtMetadata, err := e.getGlobalMetadata(dcdtTokenKey)
+	dcdtMetadata, err := e.GetGlobalMetadata(dcdtTokenKey)
 	if err != nil {
 		return false
 	}
@@ -163,7 +182,7 @@ func (e *dcdtGlobalSettings) IsLimitedTransfer(dcdtTokenKey []byte) bool {
 
 // IsBurnForAll returns true if the dcdtTokenKey (prefixed) is with burn for all
 func (e *dcdtGlobalSettings) IsBurnForAll(dcdtTokenKey []byte) bool {
-	dcdtMetadata, err := e.getGlobalMetadata(dcdtTokenKey)
+	dcdtMetadata, err := e.GetGlobalMetadata(dcdtTokenKey)
 	if err != nil {
 		return false
 	}
@@ -177,7 +196,7 @@ func (e *dcdtGlobalSettings) IsSenderOrDestinationWithTransferRole(sender, desti
 		return false
 	}
 
-	systemAcc, err := e.getSystemAccount()
+	systemAcc, err := getSystemAccount(e.accounts)
 	if err != nil {
 		return false
 	}
@@ -197,8 +216,9 @@ func (e *dcdtGlobalSettings) IsSenderOrDestinationWithTransferRole(sender, desti
 	return false
 }
 
-func (e *dcdtGlobalSettings) getGlobalMetadata(dcdtTokenKey []byte) (*DCDTGlobalMetadata, error) {
-	systemSCAccount, err := e.getSystemAccount()
+// GetGlobalMetadata returns the global metadata for the dcdtTokenKey
+func (e *dcdtGlobalSettings) GetGlobalMetadata(dcdtTokenKey []byte) (*DCDTGlobalMetadata, error) {
+	systemSCAccount, err := getSystemAccount(e.accounts)
 	if err != nil {
 		return nil, err
 	}
@@ -209,6 +229,99 @@ func (e *dcdtGlobalSettings) getGlobalMetadata(dcdtTokenKey []byte) (*DCDTGlobal
 	}
 	dcdtMetaData := DCDTGlobalMetadataFromBytes(val)
 	return &dcdtMetaData, nil
+}
+
+// GetTokenType returns the token type for the dcdtTokenKey
+func (e *dcdtGlobalSettings) GetTokenType(dcdtTokenKey []byte) (uint32, error) {
+	dcdtMetaData, err := e.GetGlobalMetadata(dcdtTokenKey)
+	if err != nil {
+		return 0, err
+	}
+
+	tokenType, err := convertToDCDTTokenType(uint32(dcdtMetaData.TokenType))
+	if errors.Is(err, ErrTypeNotSetInsideGlobalSettingsHandler) {
+		return uint32(core.NonFungible), nil
+	}
+	if err != nil {
+		return 0, err
+	}
+
+	return tokenType, nil
+}
+
+// SetTokenType sets the token type for the dcdtTokenKey
+func (e *dcdtGlobalSettings) SetTokenType(dcdtTokenKey []byte, tokenType uint32) error {
+	globalSettingsTokenType, err := convertToGlobalSettingsHandlerTokenType(tokenType)
+	if err != nil {
+		return err
+	}
+
+	systemAccount, err := getSystemAccount(e.accounts)
+	if err != nil {
+		return err
+	}
+
+	val, _, err := systemAccount.AccountDataHandler().RetrieveValue(dcdtTokenKey)
+	if core.IsGetNodeFromDBError(err) {
+		return err
+	}
+	dcdtMetaData := DCDTGlobalMetadataFromBytes(val)
+	dcdtMetaData.TokenType = byte(globalSettingsTokenType)
+
+	err = systemAccount.AccountDataHandler().SaveKeyValue(dcdtTokenKey, dcdtMetaData.ToBytes())
+	if err != nil {
+		return err
+	}
+
+	return e.accounts.SaveAccount(systemAccount)
+}
+
+func convertToGlobalSettingsHandlerTokenType(dcdtType uint32) (uint32, error) {
+	switch dcdtType {
+	case uint32(core.Fungible):
+		return uint32(fungible), nil
+	case uint32(core.NonFungible):
+		return uint32(nonFungible), nil
+	case uint32(core.NonFungibleV2):
+		return uint32(nonFungibleV2), nil
+	case uint32(core.MetaFungible):
+		return uint32(metaFungible), nil
+	case uint32(core.SemiFungible):
+		return uint32(semiFungible), nil
+	case uint32(core.DynamicNFT):
+		return uint32(dynamicNFT), nil
+	case uint32(core.DynamicSFT):
+		return uint32(dynamicSFT), nil
+	case uint32(core.DynamicMeta):
+		return uint32(dynamicMeta), nil
+	default:
+		return math.MaxUint32, fmt.Errorf("invalid dcdt type: %d", dcdtType)
+	}
+}
+
+func convertToDCDTTokenType(dcdtType uint32) (uint32, error) {
+	switch DCDTTypeForGlobalSettingsHandler(dcdtType) {
+	case notSet:
+		return 0, ErrTypeNotSetInsideGlobalSettingsHandler
+	case fungible:
+		return uint32(core.Fungible), nil
+	case nonFungible:
+		return uint32(core.NonFungible), nil
+	case nonFungibleV2:
+		return uint32(core.NonFungibleV2), nil
+	case metaFungible:
+		return uint32(core.MetaFungible), nil
+	case semiFungible:
+		return uint32(core.SemiFungible), nil
+	case dynamicNFT:
+		return uint32(core.DynamicNFT), nil
+	case dynamicSFT:
+		return uint32(core.DynamicSFT), nil
+	case dynamicMeta:
+		return uint32(core.DynamicMeta), nil
+	default:
+		return math.MaxUint32, fmt.Errorf("invalid dcdt type: %d", dcdtType)
+	}
 }
 
 // IsInterfaceNil returns true if underlying object in nil

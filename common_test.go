@@ -9,19 +9,19 @@ import (
 
 func TestEI_validateToken(t *testing.T) {
 	var result bool
-	result = ValidateToken([]byte("REWARIDEFL-08d8eff"))
+	result = ValidateToken([]byte("MOARIDEFL-08d8eff"))
 	assert.False(t, result)
-	result = ValidateToken([]byte("REWARIDEFL-08d8e"))
+	result = ValidateToken([]byte("MOARIDEFL-08d8e"))
 	assert.False(t, result)
-	result = ValidateToken([]byte("REWARIDEFL08d8ef"))
+	result = ValidateToken([]byte("MOARIDEFL08d8ef"))
 	assert.False(t, result)
-	result = ValidateToken([]byte("REWARIDEFl-08d8ef"))
+	result = ValidateToken([]byte("MOARIDEFl-08d8ef"))
 	assert.False(t, result)
-	result = ValidateToken([]byte("REWARIDEF*-08d8ef"))
+	result = ValidateToken([]byte("MOARIDEF*-08d8ef"))
 	assert.False(t, result)
-	result = ValidateToken([]byte("REWARIDEFL-08d8eF"))
+	result = ValidateToken([]byte("MOARIDEFL-08d8eF"))
 	assert.False(t, result)
-	result = ValidateToken([]byte("REWARIDEFL-08d*ef"))
+	result = ValidateToken([]byte("MOARIDEFL-08d*ef"))
 	assert.False(t, result)
 
 	result = ValidateToken([]byte("ALC6258d2"))
@@ -39,9 +39,9 @@ func TestEI_validateToken(t *testing.T) {
 	result = ValidateToken([]byte("ALCCCCCCCCC-6258d2"))
 	assert.False(t, result)
 
-	result = ValidateToken([]byte("REWARIDEF2-08d8ef"))
+	result = ValidateToken([]byte("MOARIDEF2-08d8ef"))
 	assert.True(t, result)
-	result = ValidateToken([]byte("REWARIDEFL-08d8ef"))
+	result = ValidateToken([]byte("MOARIDEFL-08d8ef"))
 	assert.True(t, result)
 	result = ValidateToken([]byte("ALC-6258d2"))
 	assert.True(t, result)

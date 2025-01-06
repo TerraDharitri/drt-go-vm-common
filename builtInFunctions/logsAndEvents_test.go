@@ -33,10 +33,10 @@ func TestExtractTokenIdentifierAndNonceDCDTWipe(t *testing.T) {
 	require.Equal(t, uint64(4), nonce)
 	require.Equal(t, []byte("SKE7Y-73bbcd"), identifier)
 
-	hexArg = "57524557412d376662623930"
+	hexArg = "574d4f412d376662623930"
 	args, _ = hex.DecodeString(hexArg)
 
 	identifier, nonce = extractTokenIdentifierAndNonceDCDTWipe(args)
 	require.Equal(t, uint64(0), nonce)
-	require.Equal(t, []byte("WREWA-7fbb90"), identifier)
+	require.Equal(t, []byte("WMOA-7fbb90"), identifier)
 }

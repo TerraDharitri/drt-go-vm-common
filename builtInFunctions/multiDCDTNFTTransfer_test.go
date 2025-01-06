@@ -65,11 +65,11 @@ func createAccountsAdapterWithMap() vmcommon.AccountsAdapter {
 	return accounts
 }
 
-func createDCDTNFTMultiTransferWithMockArguments(selfShard uint32, numShards uint32, globalSettingsHandler vmcommon.ExtendedDCDTGlobalSettingsHandler) *dcdtNFTMultiTransfer {
+func createDCDTNFTMultiTransferWithMockArguments(selfShard uint32, numShards uint32, globalSettingsHandler vmcommon.GlobalMetadataHandler) *dcdtNFTMultiTransfer {
 	return createDCDTNFTMultiTransferWithMockArgumentsWithLogEventFlag(selfShard, numShards, globalSettingsHandler, false)
 }
 
-func createDCDTNFTMultiTransferWithMockArgumentsWithLogEventFlag(selfShard uint32, numShards uint32, globalSettingsHandler vmcommon.ExtendedDCDTGlobalSettingsHandler, isScToScEventLogEnabled bool) *dcdtNFTMultiTransfer {
+func createDCDTNFTMultiTransferWithMockArgumentsWithLogEventFlag(selfShard uint32, numShards uint32, globalSettingsHandler vmcommon.GlobalMetadataHandler, isScToScEventLogEnabled bool) *dcdtNFTMultiTransfer {
 	marshaller := &mock.MarshalizerMock{}
 	shardCoordinator := mock.NewMultiShardsCoordinatorMock(numShards)
 	shardCoordinator.CurrentShard = selfShard
@@ -1063,7 +1063,7 @@ func TestDCDTNFTMultiTransfer_NotEnoughGas(t *testing.T) {
 	assert.Equal(t, err, ErrNotEnoughGas)
 }
 
-func TestDCDTNFTMultiTransfer_WithRewaValue(t *testing.T) {
+func TestDCDTNFTMultiTransfer_WithMoaValue(t *testing.T) {
 	t.Parallel()
 
 	transferFunc := createDCDTNFTMultiTransferWithMockArguments(0, 1, &mock.GlobalSettingsHandlerStub{})
@@ -1192,4 +1192,225 @@ func runMultiTransfer(t *testing.T, isScToScEventLogEnabled bool) (*vmcommon.VMO
 	}
 
 	return multiTransferSenderShard.ProcessBuiltinFunction(sender.(vmcommon.UserAccountHandler), nil, vmInput)
+}
+
+// creates accounts with token1 and MOA balances.
+func createSetupForMultiTransferWithMOA(t *testing.T) (*vmcommon.ContractCallInput, *dcdtNFTMultiTransfer) {
+	multiTransfer := createDCDTNFTMultiTransferWithMockArguments(0, 1, &mock.GlobalSettingsHandlerStub{})
+	payableChecker, _ := NewPayableCheckFunc(
+		&mock.PayableHandlerStub{
+			IsPayableCalled: func(address []byte) (bool, error) {
+				return true, nil
+			},
+		}, &mock.EnableEpochsHandlerStub{
+			IsFlagEnabledCalled: func(flag core.EnableEpochFlag) bool {
+				return flag == FixAsyncCallbackCheckFlag || flag == CheckFunctionArgumentFlag
+			},
+		})
+
+	_ = multiTransfer.SetPayableChecker(payableChecker)
+	senderAddress := bytes.Repeat([]byte{2}, 32)
+	destinationAddress := bytes.Repeat([]byte{0}, 32)
+	destinationAddress[25] = 1
+	sender, err := multiTransfer.accounts.LoadAccount(senderAddress)
+	require.Nil(t, err)
+	destination, err := multiTransfer.accounts.LoadAccount(destinationAddress)
+	require.Nil(t, err)
+
+	token1 := []byte("token1")
+	token2 := []byte(vmcommon.MOAIdentifier)
+	tokenNonce := uint64(1)
+
+	initialTokens := big.NewInt(3)
+	createDCDTNFTToken(token1, core.NonFungible, tokenNonce, initialTokens, multiTransfer.marshaller, sender.(vmcommon.UserAccountHandler))
+	createDCDTNFTToken(token1, core.NonFungible, tokenNonce, initialTokens, multiTransfer.marshaller, destination.(vmcommon.UserAccountHandler))
+
+	_ = sender.(vmcommon.UserAccountHandler).AddToBalance(initialTokens)
+
+	_ = multiTransfer.accounts.SaveAccount(sender)
+	_ = multiTransfer.accounts.SaveAccount(destination)
+	_, _ = multiTransfer.accounts.Commit()
+
+	scCallFunctionAsHex := hex.EncodeToString([]byte("functionToCall"))
+	scCallArg := hex.EncodeToString([]byte("arg"))
+	nonceBytes := big.NewInt(int64(tokenNonce)).Bytes()
+	quantityBytes := big.NewInt(1).Bytes()
+	scCallArgs := [][]byte{[]byte(scCallFunctionAsHex), []byte(scCallArg)}
+	vmInput := &vmcommon.ContractCallInput{
+		VMInput: vmcommon.VMInput{
+			CallValue:   big.NewInt(0),
+			CallerAddr:  senderAddress,
+			Arguments:   [][]byte{destinationAddress, big.NewInt(2).Bytes(), token1, nonceBytes, quantityBytes, token2, big.NewInt(0).Bytes(), quantityBytes},
+			GasProvided: 100000,
+		},
+		RecipientAddr: senderAddress,
+	}
+	vmInput.Arguments = append(vmInput.Arguments, scCallArgs...)
+
+	return vmInput, multiTransfer
+}
+
+func TestDCDTNFTMultiTransfer_ProcessBuiltinFunctionOnSameShardWithScCallWithMOANotEnabled(t *testing.T) {
+	t.Parallel()
+
+	vmInput, multiTransfer := createSetupForMultiTransferWithMOA(t)
+	multiTransfer.enableEpochsHandler = &mock.EnableEpochsHandlerStub{
+		IsFlagEnabledCalled: func(flag core.EnableEpochFlag) bool {
+			return flag != MOAInDCDTMultiTransferFlag
+		},
+	}
+
+	sender, err := multiTransfer.accounts.LoadAccount(vmInput.CallerAddr)
+	require.Nil(t, err)
+	destination, err := multiTransfer.accounts.LoadAccount(vmInput.Arguments[0])
+	require.Nil(t, err)
+
+	_, err = multiTransfer.ProcessBuiltinFunction(sender.(vmcommon.UserAccountHandler), destination.(vmcommon.UserAccountHandler), vmInput)
+	require.NotNil(t, err)
+	require.Equal(t, err.Error(), "insufficient quantity for token: MOA-000000 for token MOA-000000")
+}
+
+func TestDCDTNFTMultiTransfer_ProcessBuiltinFunctionOnSameShardWithScCallWithMOA(t *testing.T) {
+	t.Parallel()
+
+	vmInput, multiTransfer := createSetupForMultiTransferWithMOA(t)
+	multiTransfer.enableEpochsHandler = &mock.EnableEpochsHandlerStub{
+		IsFlagEnabledCalled: func(flag core.EnableEpochFlag) bool {
+			return true
+		},
+	}
+
+	sender, err := multiTransfer.accounts.LoadAccount(vmInput.CallerAddr)
+	require.Nil(t, err)
+	destination, err := multiTransfer.accounts.LoadAccount(vmInput.RecipientAddr)
+	require.Nil(t, err)
+
+	vmOutput, err := multiTransfer.ProcessBuiltinFunction(sender.(vmcommon.UserAccountHandler), destination.(vmcommon.UserAccountHandler), vmInput)
+	require.Nil(t, err)
+	require.Equal(t, vmcommon.Ok, vmOutput.ReturnCode)
+
+	_ = multiTransfer.accounts.SaveAccount(sender)
+	_, _ = multiTransfer.accounts.Commit()
+
+	// reload accounts
+	sender, err = multiTransfer.accounts.LoadAccount(vmInput.CallerAddr)
+	require.Nil(t, err)
+	destination, err = multiTransfer.accounts.LoadAccount(vmInput.Arguments[0])
+	require.Nil(t, err)
+
+	testNFTTokenShouldExist(t, multiTransfer.marshaller, sender, []byte("token1"), 1, big.NewInt(2)) // 3 initial - 1 transferred
+	testNFTTokenShouldExist(t, multiTransfer.marshaller, destination, []byte("token1"), 1, big.NewInt(4))
+
+	require.Equal(t, sender.(vmcommon.UserAccountHandler).GetBalance(), big.NewInt(2))
+	require.Equal(t, destination.(vmcommon.UserAccountHandler).GetBalance(), big.NewInt(1))
+
+	funcName, args := extractScResultsFromVmOutput(t, vmOutput)
+
+	scCallFunctionAsHex := hex.EncodeToString([]byte("functionToCall"))
+	scCallArg := hex.EncodeToString([]byte("arg"))
+	assert.Equal(t, scCallFunctionAsHex, funcName)
+	require.Equal(t, 1, len(args))
+	require.Equal(t, []byte(scCallArg), args[0])
+}
+
+func TestDCDTNFTMultiTransfer_ProcessBuiltinFunctionOnCrossShardsWithMOA(t *testing.T) {
+	t.Parallel()
+
+	payableHandler := &mock.PayableHandlerStub{
+		IsPayableCalled: func(address []byte) (bool, error) {
+			return true, nil
+		},
+	}
+
+	multiTransferSenderShard := createDCDTNFTMultiTransferWithMockArguments(1, 2, &mock.GlobalSettingsHandlerStub{})
+	_ = multiTransferSenderShard.SetPayableChecker(payableHandler)
+
+	multiTransferDestinationShard := createDCDTNFTMultiTransferWithMockArguments(0, 2, &mock.GlobalSettingsHandlerStub{})
+	_ = multiTransferDestinationShard.SetPayableChecker(payableHandler)
+
+	senderAddress := bytes.Repeat([]byte{1}, 32)
+	destinationAddress := bytes.Repeat([]byte{0}, 32)
+	destinationAddress[25] = 1
+	sender, err := multiTransferSenderShard.accounts.LoadAccount(senderAddress)
+	require.Nil(t, err)
+
+	token1 := []byte("token1")
+	token2 := []byte(vmcommon.MOAIdentifier)
+	tokenNonce := uint64(1)
+
+	initialTokens := big.NewInt(3)
+	_ = sender.(vmcommon.UserAccountHandler).AddToBalance(initialTokens)
+	createDCDTNFTToken(token1, core.NonFungible, tokenNonce, initialTokens, multiTransferSenderShard.marshaller, sender.(vmcommon.UserAccountHandler))
+	_ = multiTransferSenderShard.accounts.SaveAccount(sender)
+	_, _ = multiTransferSenderShard.accounts.Commit()
+
+	// reload sender account
+	sender, err = multiTransferSenderShard.accounts.LoadAccount(senderAddress)
+	require.Nil(t, err)
+
+	nonceBytes := big.NewInt(int64(tokenNonce)).Bytes()
+	quantityBytes := big.NewInt(1).Bytes()
+	scCallFunctionAsHex := hex.EncodeToString([]byte("functionToCall"))
+	scCallArg := hex.EncodeToString([]byte("arg"))
+	scCallArgs := [][]byte{[]byte(scCallFunctionAsHex), []byte(scCallArg)}
+	vmInput := &vmcommon.ContractCallInput{
+		VMInput: vmcommon.VMInput{
+			CallValue:   big.NewInt(0),
+			CallerAddr:  senderAddress,
+			Arguments:   [][]byte{destinationAddress, big.NewInt(2).Bytes(), token1, nonceBytes, quantityBytes, token2, big.NewInt(0).Bytes(), quantityBytes},
+			GasProvided: 1000000,
+		},
+		RecipientAddr: senderAddress,
+	}
+	vmInput.Arguments = append(vmInput.Arguments, scCallArgs...)
+
+	multiTransferSenderShard.enableEpochsHandler = &mock.EnableEpochsHandlerStub{
+		IsFlagEnabledCalled: func(flag core.EnableEpochFlag) bool {
+			return true
+		},
+	}
+
+	vmOutput, err := multiTransferSenderShard.ProcessBuiltinFunction(sender.(vmcommon.UserAccountHandler), nil, vmInput)
+	require.Nil(t, err)
+	require.Equal(t, vmcommon.Ok, vmOutput.ReturnCode)
+
+	_ = multiTransferSenderShard.accounts.SaveAccount(sender)
+	_, _ = multiTransferSenderShard.accounts.Commit()
+
+	// reload sender account
+	sender, err = multiTransferSenderShard.accounts.LoadAccount(senderAddress)
+	require.Nil(t, err)
+
+	testNFTTokenShouldExist(t, multiTransferSenderShard.marshaller, sender, token1, tokenNonce, big.NewInt(2)) // 3 initial - 1 transferred
+	require.Equal(t, sender.(vmcommon.UserAccountHandler).GetBalance(), big.NewInt(2))
+
+	_, args := extractScResultsFromVmOutput(t, vmOutput)
+
+	destination, err := multiTransferDestinationShard.accounts.LoadAccount(destinationAddress)
+	require.Nil(t, err)
+
+	vmInput = &vmcommon.ContractCallInput{
+		VMInput: vmcommon.VMInput{
+			CallValue:  big.NewInt(0),
+			CallerAddr: senderAddress,
+			Arguments:  args,
+		},
+		RecipientAddr: destinationAddress,
+	}
+
+	vmOutput, err = multiTransferDestinationShard.ProcessBuiltinFunction(nil, destination.(vmcommon.UserAccountHandler), vmInput)
+	require.Nil(t, err)
+	require.Equal(t, vmcommon.Ok, vmOutput.ReturnCode)
+	_ = multiTransferDestinationShard.accounts.SaveAccount(destination)
+	_, _ = multiTransferDestinationShard.accounts.Commit()
+
+	destination, err = multiTransferDestinationShard.accounts.LoadAccount(destinationAddress)
+	require.Nil(t, err)
+
+	testNFTTokenShouldExist(t, multiTransferDestinationShard.marshaller, destination, token1, tokenNonce, big.NewInt(1))
+	require.Equal(t, destination.(vmcommon.UserAccountHandler).GetBalance(), big.NewInt(1))
+	funcName, args := extractScResultsFromVmOutput(t, vmOutput)
+	assert.Equal(t, scCallFunctionAsHex, funcName)
+	require.Equal(t, 1, len(args))
+	require.Equal(t, []byte(scCallArg), args[0])
 }

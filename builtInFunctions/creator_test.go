@@ -6,6 +6,7 @@ import (
 
 	"github.com/TerraDharitri/drt-go-core/core"
 	"github.com/TerraDharitri/drt-go-core/core/check"
+	vmcommon "github.com/TerraDharitri/drt-go-vm-common"
 	"github.com/TerraDharitri/drt-go-vm-common/mock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -79,6 +80,11 @@ func fillGasMapBuiltInCosts(value uint64) map[string]uint64 {
 	gasMap["UnGuardAccount"] = value
 	gasMap["TrieLoadPerNode"] = value
 	gasMap["TrieStorePerNode"] = value
+	gasMap["DCDTModifyRoyalties"] = value
+	gasMap["DCDTModifyCreator"] = value
+	gasMap["DCDTNFTRecreate"] = value
+	gasMap["DCDTNFTSetNewURIs"] = value
+	gasMap["DCDTNFTUpdate"] = value
 
 	return gasMap
 }
@@ -161,13 +167,38 @@ func TestCreateBuiltInContainer_Create(t *testing.T) {
 
 	err := f.CreateBuiltInFunctionContainer()
 	assert.Nil(t, err)
-	assert.Equal(t, 36, f.BuiltInFunctionContainer().Len())
+	assert.Equal(t, 42, f.BuiltInFunctionContainer().Len())
 
 	err = f.SetPayableHandler(nil)
-	assert.NotNil(t, err)
+	assert.Equal(t, ErrNilPayableHandler, err)
 
 	err = f.SetPayableHandler(&mock.PayableHandlerStub{})
 	assert.Nil(t, err)
+
+	err = f.SetBlockchainHook(nil)
+	assert.Equal(t, ErrNilBlockchainHook, err)
+
+	numSetBlockDataHandlerCalls := 0
+	for funcName := range f.builtInFunctions.Keys() {
+		builtInFunc, _ := f.builtInFunctions.Get(funcName)
+		_, ok := builtInFunc.(vmcommon.BlockchainDataProvider)
+		if !ok {
+			continue
+		}
+
+		builtInFunc = &mock.BuiltInFunctionStub{
+			SetBlockchainHookCalled: func(blockDataHandler vmcommon.BlockchainDataHook) error {
+				numSetBlockDataHandlerCalls++
+				return nil
+			},
+		}
+		err = f.builtInFunctions.Replace(funcName, builtInFunc)
+		assert.Nil(t, err)
+	}
+
+	err = f.SetBlockchainHook(&disabledBlockchainHook{})
+	assert.Nil(t, err)
+	assert.Equal(t, 7, numSetBlockDataHandlerCalls)
 
 	fillGasMapInternal(args.GasMap, 5)
 	f.GasScheduleChange(args.GasMap)

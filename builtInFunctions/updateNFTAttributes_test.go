@@ -20,35 +20,42 @@ func TestNewDCDTNFTUpdateAttributesFunc(t *testing.T) {
 	t.Run("nil marshaller should error", func(t *testing.T) {
 		t.Parallel()
 
-		e, err := NewDCDTNFTUpdateAttributesFunc(10, vmcommon.BaseOperationCost{}, nil, nil, nil, nil)
+		e, err := NewDCDTNFTUpdateAttributesFunc(10, vmcommon.BaseOperationCost{}, nil, nil, nil, nil, nil)
 		require.True(t, check.IfNil(e))
 		require.Equal(t, ErrNilDCDTNFTStorageHandler, err)
 	})
 	t.Run("nil global settings handler should error", func(t *testing.T) {
 		t.Parallel()
 
-		e, err := NewDCDTNFTUpdateAttributesFunc(10, vmcommon.BaseOperationCost{}, createNewDCDTDataStorageHandler(), nil, nil, nil)
+		e, err := NewDCDTNFTUpdateAttributesFunc(10, vmcommon.BaseOperationCost{}, createNewDCDTDataStorageHandler(), nil, nil, nil, nil)
 		require.True(t, check.IfNil(e))
 		require.Equal(t, ErrNilGlobalSettingsHandler, err)
 	})
 	t.Run("nil roles handler should error", func(t *testing.T) {
 		t.Parallel()
 
-		e, err := NewDCDTNFTUpdateAttributesFunc(10, vmcommon.BaseOperationCost{}, createNewDCDTDataStorageHandler(), &mock.GlobalSettingsHandlerStub{}, nil, nil)
+		e, err := NewDCDTNFTUpdateAttributesFunc(10, vmcommon.BaseOperationCost{}, createNewDCDTDataStorageHandler(), &mock.GlobalSettingsHandlerStub{}, nil, nil, nil)
 		require.True(t, check.IfNil(e))
 		require.Equal(t, ErrNilRolesHandler, err)
 	})
 	t.Run("nil enable epochs handler should error", func(t *testing.T) {
 		t.Parallel()
 
-		e, err := NewDCDTNFTUpdateAttributesFunc(10, vmcommon.BaseOperationCost{}, createNewDCDTDataStorageHandler(), &mock.GlobalSettingsHandlerStub{}, &mock.DCDTRoleHandlerStub{}, nil)
+		e, err := NewDCDTNFTUpdateAttributesFunc(10, vmcommon.BaseOperationCost{}, createNewDCDTDataStorageHandler(), &mock.GlobalSettingsHandlerStub{}, &mock.DCDTRoleHandlerStub{}, nil, nil)
 		require.True(t, check.IfNil(e))
 		require.Equal(t, ErrNilEnableEpochsHandler, err)
+	})
+	t.Run("nil marshaller should error", func(t *testing.T) {
+		t.Parallel()
+
+		e, err := NewDCDTNFTUpdateAttributesFunc(10, vmcommon.BaseOperationCost{}, createNewDCDTDataStorageHandler(), &mock.GlobalSettingsHandlerStub{}, &mock.DCDTRoleHandlerStub{}, &mock.EnableEpochsHandlerStub{}, nil)
+		require.True(t, check.IfNil(e))
+		require.Equal(t, ErrNilMarshalizer, err)
 	})
 	t.Run("should work", func(t *testing.T) {
 		t.Parallel()
 
-		e, err := NewDCDTNFTUpdateAttributesFunc(10, vmcommon.BaseOperationCost{}, createNewDCDTDataStorageHandler(), &mock.GlobalSettingsHandlerStub{}, &mock.DCDTRoleHandlerStub{}, &mock.EnableEpochsHandlerStub{})
+		e, err := NewDCDTNFTUpdateAttributesFunc(10, vmcommon.BaseOperationCost{}, createNewDCDTDataStorageHandler(), &mock.GlobalSettingsHandlerStub{}, &mock.DCDTRoleHandlerStub{}, &mock.EnableEpochsHandlerStub{}, &mock.MarshalizerMock{})
 		require.False(t, check.IfNil(e))
 		require.NoError(t, err)
 		require.False(t, e.IsActive())
@@ -63,7 +70,7 @@ func TestDCDTNFTUpdateAttributes_SetNewGasConfig_NilGasCost(t *testing.T) {
 		IsFlagEnabledCalled: func(flag core.EnableEpochFlag) bool {
 			return flag == DCDTNFTImprovementV1Flag
 		},
-	})
+	}, &mock.MarshalizerMock{})
 
 	e.SetNewGasConfig(nil)
 	require.Equal(t, defaultGasCost, e.funcGasCost)
@@ -78,7 +85,7 @@ func TestDCDTNFTUpdateAttributes_SetNewGasConfig_ShouldWork(t *testing.T) {
 		IsFlagEnabledCalled: func(flag core.EnableEpochFlag) bool {
 			return flag == DCDTNFTImprovementV1Flag
 		},
-	})
+	}, &mock.MarshalizerMock{})
 
 	e.SetNewGasConfig(
 		&vmcommon.GasCost{
@@ -98,7 +105,7 @@ func TestDCDTNFTUpdateAttributes_ProcessBuiltinFunctionErrorOnCheckInput(t *test
 		IsFlagEnabledCalled: func(flag core.EnableEpochFlag) bool {
 			return flag == DCDTNFTImprovementV1Flag
 		},
-	})
+	}, &mock.MarshalizerMock{})
 
 	// nil vm input
 	output, err := e.ProcessBuiltinFunction(mock.NewAccountWrapMock([]byte("addr")), nil, nil)
@@ -203,7 +210,7 @@ func TestDCDTNFTUpdateAttributes_ProcessBuiltinFunctionInvalidNumberOfArguments(
 		IsFlagEnabledCalled: func(flag core.EnableEpochFlag) bool {
 			return flag == DCDTNFTImprovementV1Flag
 		},
-	})
+	}, &mock.MarshalizerMock{})
 	output, err := e.ProcessBuiltinFunction(
 		mock.NewAccountWrapMock([]byte("addr")),
 		nil,
@@ -234,7 +241,7 @@ func TestDCDTNFTUpdateAttributes_ProcessBuiltinFunctionCheckAllowedToExecuteErro
 		IsFlagEnabledCalled: func(flag core.EnableEpochFlag) bool {
 			return flag == DCDTNFTImprovementV1Flag
 		},
-	})
+	}, &mock.MarshalizerMock{})
 	output, err := e.ProcessBuiltinFunction(
 		mock.NewAccountWrapMock([]byte("addr")),
 		nil,
@@ -260,7 +267,7 @@ func TestDCDTNFTUpdateAttributes_ProcessBuiltinFunctionNewSenderShouldErr(t *tes
 		IsFlagEnabledCalled: func(flag core.EnableEpochFlag) bool {
 			return flag == DCDTNFTImprovementV1Flag
 		},
-	})
+	}, &mock.MarshalizerMock{})
 	output, err := e.ProcessBuiltinFunction(
 		mock.NewAccountWrapMock([]byte("addr")),
 		nil,
@@ -288,7 +295,7 @@ func TestDCDTNFTUpdateAttributes_ProcessBuiltinFunctionMetaDataMissing(t *testin
 		IsFlagEnabledCalled: func(flag core.EnableEpochFlag) bool {
 			return flag == DCDTNFTImprovementV1Flag
 		},
-	})
+	}, &mock.MarshalizerMock{})
 
 	userAcc := mock.NewAccountWrapMock([]byte("addr"))
 	dcdtData := &dcdt.DCDigitalToken{}
@@ -326,7 +333,7 @@ func TestDCDTNFTUpdateAttributes_ProcessBuiltinFunctionShouldErrOnSaveBecauseTok
 		IsFlagEnabledCalled: func(flag core.EnableEpochFlag) bool {
 			return flag == DCDTNFTImprovementV1Flag
 		},
-	})
+	}, &mock.MarshalizerMock{})
 
 	userAcc := mock.NewAccountWrapMock([]byte("addr"))
 	dcdtData := &dcdt.DCDigitalToken{
@@ -378,10 +385,11 @@ func TestDCDTNFTUpdateAttributes_ProcessBuiltinFunctionShouldWork(t *testing.T) 
 		IsFlagEnabledCalled: func(flag core.EnableEpochFlag) bool {
 			return flag == DCDTNFTImprovementV1Flag
 		},
-	})
+	}, &mock.MarshalizerMock{})
 
 	userAcc := mock.NewAccountWrapMock([]byte("addr"))
 	dcdtData := &dcdt.DCDigitalToken{
+		Type: uint32(core.NonFungible),
 		TokenMetaData: &dcdt.MetaData{
 			Name: []byte("test"),
 		},

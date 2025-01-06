@@ -10,19 +10,21 @@ import (
 
 // DCDTNFTStorageHandlerStub -
 type DCDTNFTStorageHandlerStub struct {
-	SaveDCDTNFTTokenCalled                                    func(senderAddress []byte, acnt vmcommon.UserAccountHandler, dcdtTokenKey []byte, nonce uint64, dcdtData *dcdt.DCDigitalToken, mustUpdateAllFields bool, isReturnWithError bool) ([]byte, error)
+	SaveDCDTNFTTokenCalled                                    func(senderAddress []byte, acnt vmcommon.UserAccountHandler, dcdtTokenKey []byte, nonce uint64, dcdtData *dcdt.DCDigitalToken, saveArgs vmcommon.NftSaveArgs) ([]byte, error)
 	GetDCDTNFTTokenOnSenderCalled                             func(acnt vmcommon.UserAccountHandler, dcdtTokenKey []byte, nonce uint64) (*dcdt.DCDigitalToken, error)
 	GetDCDTNFTTokenOnDestinationCalled                        func(acnt vmcommon.UserAccountHandler, dcdtTokenKey []byte, nonce uint64) (*dcdt.DCDigitalToken, bool, error)
 	GetDCDTNFTTokenOnDestinationWithCustomSystemAccountCalled func(accnt vmcommon.UserAccountHandler, dcdtTokenKey []byte, nonce uint64, systemAccount vmcommon.UserAccountHandler) (*dcdt.DCDigitalToken, bool, error)
 	WasAlreadySentToDestinationShardAndUpdateStateCalled      func(tickerID []byte, nonce uint64, dstAddress []byte) (bool, error)
-	SaveNFTMetaDataToSystemAccountCalled                      func(tx data.TransactionHandler) error
-	AddToLiquiditySystemAccCalled                             func(dcdtTokenKey []byte, nonce uint64, transferValue *big.Int) error
+	SaveNFTMetaDataCalled                                     func(tx data.TransactionHandler) error
+	AddToLiquiditySystemAccCalled                             func(dcdtTokenKey []byte, tokenType uint32, nonce uint64, transferValue *big.Int, keepMetadataOnZeroLiquidity bool) error
+	GetMetaDataFromSystemAccountCalled                        func([]byte, uint64) (*dcdt.DCDigitalToken, error)
+	SaveMetaDataToSystemAccountCalled                         func(tokenKey []byte, nonce uint64, dcdtData *dcdt.DCDigitalToken) error
 }
 
 // SaveDCDTNFTToken -
-func (stub *DCDTNFTStorageHandlerStub) SaveDCDTNFTToken(senderAddress []byte, acnt vmcommon.UserAccountHandler, dcdtTokenKey []byte, nonce uint64, dcdtData *dcdt.DCDigitalToken, mustUpdateAllFields bool, isReturnWithError bool) ([]byte, error) {
+func (stub *DCDTNFTStorageHandlerStub) SaveDCDTNFTToken(senderAddress []byte, acnt vmcommon.UserAccountHandler, dcdtTokenKey []byte, nonce uint64, dcdtData *dcdt.DCDigitalToken, saveArgs vmcommon.NftSaveArgs) ([]byte, error) {
 	if stub.SaveDCDTNFTTokenCalled != nil {
-		return stub.SaveDCDTNFTTokenCalled(senderAddress, acnt, dcdtTokenKey, nonce, dcdtData, mustUpdateAllFields, isReturnWithError)
+		return stub.SaveDCDTNFTTokenCalled(senderAddress, acnt, dcdtTokenKey, nonce, dcdtData, saveArgs)
 	}
 	return nil, nil
 }
@@ -33,6 +35,22 @@ func (stub *DCDTNFTStorageHandlerStub) GetDCDTNFTTokenOnSender(acnt vmcommon.Use
 		return stub.GetDCDTNFTTokenOnSenderCalled(acnt, dcdtTokenKey, nonce)
 	}
 	return nil, nil
+}
+
+// GetMetaDataFromSystemAccount -
+func (stub *DCDTNFTStorageHandlerStub) GetMetaDataFromSystemAccount(key []byte, nonce uint64) (*dcdt.DCDigitalToken, error) {
+	if stub.GetMetaDataFromSystemAccountCalled != nil {
+		return stub.GetMetaDataFromSystemAccountCalled(key, nonce)
+	}
+	return nil, nil
+}
+
+// SaveMetaDataToSystemAccount -
+func (stub *DCDTNFTStorageHandlerStub) SaveMetaDataToSystemAccount(tokenKey []byte, nonce uint64, dcdtData *dcdt.DCDigitalToken) error {
+	if stub.SaveMetaDataToSystemAccountCalled != nil {
+		return stub.SaveMetaDataToSystemAccountCalled(tokenKey, nonce, dcdtData)
+	}
+	return nil
 }
 
 // GetDCDTNFTTokenOnDestination -
@@ -59,18 +77,18 @@ func (stub *DCDTNFTStorageHandlerStub) WasAlreadySentToDestinationShardAndUpdate
 	return false, nil
 }
 
-// SaveNFTMetaDataToSystemAccount -
-func (stub *DCDTNFTStorageHandlerStub) SaveNFTMetaDataToSystemAccount(tx data.TransactionHandler) error {
-	if stub.SaveNFTMetaDataToSystemAccountCalled != nil {
-		return stub.SaveNFTMetaDataToSystemAccountCalled(tx)
+// SaveNFTMetaData -
+func (stub *DCDTNFTStorageHandlerStub) SaveNFTMetaData(tx data.TransactionHandler) error {
+	if stub.SaveNFTMetaDataCalled != nil {
+		return stub.SaveNFTMetaDataCalled(tx)
 	}
 	return nil
 }
 
 // AddToLiquiditySystemAcc -
-func (stub *DCDTNFTStorageHandlerStub) AddToLiquiditySystemAcc(dcdtTokenKey []byte, nonce uint64, transferValue *big.Int) error {
+func (stub *DCDTNFTStorageHandlerStub) AddToLiquiditySystemAcc(dcdtTokenKey []byte, tokenType uint32, nonce uint64, transferValue *big.Int, keepMetadataOnZeroLiquidity bool) error {
 	if stub.AddToLiquiditySystemAccCalled != nil {
-		return stub.AddToLiquiditySystemAccCalled(dcdtTokenKey, nonce, transferValue)
+		return stub.AddToLiquiditySystemAccCalled(dcdtTokenKey, tokenType, nonce, transferValue, keepMetadataOnZeroLiquidity)
 	}
 	return nil
 }

@@ -21,7 +21,7 @@ type VMInput struct {
 	// AsyncArguments are used only internally by the promises framework
 	AsyncArguments *AsyncArguments
 
-	// CallValue is the REWA value (amount of tokens) transferred by the transaction.
+	// CallValue is the MOA value (amount of tokens) transferred by the transaction.
 	// Before reaching the VM this value is subtracted from sender balance (CallerAddr)
 	// and to added to the smart contract balance.
 	// It is often, but not always zero in SC calls.
@@ -74,6 +74,9 @@ type VMInput struct {
 
 	// OriginalCallerAddr is the public key of the wallet originally initiating the transaction
 	OriginalCallerAddr []byte
+
+	// RelayerAddr is the public key of the relayer address who paid for the txFee
+	RelayerAddr []byte
 }
 
 type AsyncArguments struct {

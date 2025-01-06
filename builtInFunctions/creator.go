@@ -360,7 +360,7 @@ func (b *builtInFuncCreator) CreateBuiltInFunctionContainer() error {
 		return err
 	}
 
-	newFunc, err = NewDCDTNFTUpdateAttributesFunc(b.gasConfig.BuiltInCost.DCDTNFTUpdateAttributes, b.gasConfig.BaseOperationCost, b.dcdtStorageHandler, globalSettingsFunc, setRoleFunc, b.enableEpochsHandler)
+	newFunc, err = NewDCDTNFTUpdateAttributesFunc(b.gasConfig.BuiltInCost.DCDTNFTUpdateAttributes, b.gasConfig.BaseOperationCost, b.dcdtStorageHandler, globalSettingsFunc, setRoleFunc, b.enableEpochsHandler, b.marshaller)
 	if err != nil {
 		return err
 	}
@@ -369,7 +369,7 @@ func (b *builtInFuncCreator) CreateBuiltInFunctionContainer() error {
 		return err
 	}
 
-	newFunc, err = NewDCDTNFTAddUriFunc(b.gasConfig.BuiltInCost.DCDTNFTAddURI, b.gasConfig.BaseOperationCost, b.dcdtStorageHandler, globalSettingsFunc, setRoleFunc, b.enableEpochsHandler)
+	newFunc, err = NewDCDTNFTAddUriFunc(b.gasConfig.BuiltInCost.DCDTNFTAddURI, b.gasConfig.BaseOperationCost, b.dcdtStorageHandler, globalSettingsFunc, setRoleFunc, b.enableEpochsHandler, b.marshaller)
 	if err != nil {
 		return err
 	}
@@ -548,6 +548,63 @@ func (b *builtInFuncCreator) CreateBuiltInFunctionContainer() error {
 		return err
 	}
 
+	activeHandler := func() bool {
+		return b.enableEpochsHandler.IsFlagEnabled(DynamicDcdtFlag)
+	}
+	newFunc, err = NewDCDTSetTokenTypeFunc(b.accounts, globalSettingsFunc, b.marshaller, activeHandler)
+	if err != nil {
+		return err
+	}
+	err = b.builtInFunctions.Add(core.DCDTSetTokenType, newFunc)
+	if err != nil {
+		return err
+	}
+
+	newFunc, err = NewDCDTMetaDataRecreateFunc(b.gasConfig.BuiltInCost.DCDTNFTRecreate, b.gasConfig.BaseOperationCost, b.accounts, globalSettingsFunc, b.dcdtStorageHandler, setRoleFunc, b.enableEpochsHandler, b.marshaller)
+	if err != nil {
+		return err
+	}
+	err = b.builtInFunctions.Add(core.DCDTMetaDataRecreate, newFunc)
+	if err != nil {
+		return err
+	}
+
+	newFunc, err = NewDCDTMetaDataUpdateFunc(b.gasConfig.BuiltInCost.DCDTNFTUpdate, b.gasConfig.BaseOperationCost, b.accounts, globalSettingsFunc, b.dcdtStorageHandler, setRoleFunc, b.enableEpochsHandler, b.marshaller)
+	if err != nil {
+		return err
+	}
+	err = b.builtInFunctions.Add(core.DCDTMetaDataUpdate, newFunc)
+	if err != nil {
+		return err
+	}
+
+	newFunc, err = NewDCDTSetNewURIsFunc(b.gasConfig.BuiltInCost.DCDTNFTRecreate, b.gasConfig.BaseOperationCost, b.accounts, globalSettingsFunc, b.dcdtStorageHandler, setRoleFunc, b.enableEpochsHandler, b.marshaller)
+	if err != nil {
+		return err
+	}
+	err = b.builtInFunctions.Add(core.DCDTSetNewURIs, newFunc)
+	if err != nil {
+		return err
+	}
+
+	newFunc, err = NewDCDTModifyRoyaltiesFunc(b.gasConfig.BuiltInCost.DCDTModifyRoyalties, b.accounts, globalSettingsFunc, b.dcdtStorageHandler, setRoleFunc, b.enableEpochsHandler, b.marshaller)
+	if err != nil {
+		return err
+	}
+	err = b.builtInFunctions.Add(core.DCDTModifyRoyalties, newFunc)
+	if err != nil {
+		return err
+	}
+
+	newFunc, err = NewDCDTModifyCreatorFunc(b.gasConfig.BuiltInCost.DCDTModifyRoyalties, b.accounts, globalSettingsFunc, b.dcdtStorageHandler, setRoleFunc, b.enableEpochsHandler, b.marshaller)
+	if err != nil {
+		return err
+	}
+	err = b.builtInFunctions.Add(core.DCDTModifyCreator, newFunc)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -597,6 +654,33 @@ func createGasConfig(gasMap map[string]map[string]uint64) (*vmcommon.GasCost, er
 	return &gasCost, nil
 }
 
+// SetBlockchainHook sets the blockchain hook to the needed functions
+func (b *builtInFuncCreator) SetBlockchainHook(blockchainHook vmcommon.BlockchainDataHook) error {
+	if check.IfNil(blockchainHook) {
+		return ErrNilBlockchainHook
+	}
+
+	builtInFuncs := b.builtInFunctions.Keys()
+	for funcName := range builtInFuncs {
+		builtInFunc, err := b.builtInFunctions.Get(funcName)
+		if err != nil {
+			return err
+		}
+
+		dcdtBlockchainDataProvider, ok := builtInFunc.(vmcommon.BlockchainDataProvider)
+		if !ok {
+			continue
+		}
+
+		err = dcdtBlockchainDataProvider.SetBlockchainHook(blockchainHook)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 // SetPayableHandler sets the payableCheck interface to the needed functions
 func (b *builtInFuncCreator) SetPayableHandler(payableHandler vmcommon.PayableHandler) error {
 	payableChecker, err := NewPayableCheckFunc(
@@ -610,7 +694,8 @@ func (b *builtInFuncCreator) SetPayableHandler(payableHandler vmcommon.PayableHa
 	listOfTransferFunc := []string{
 		core.BuiltInFunctionMultiDCDTNFTTransfer,
 		core.BuiltInFunctionDCDTNFTTransfer,
-		core.BuiltInFunctionDCDTTransfer}
+		core.BuiltInFunctionDCDTTransfer,
+	}
 
 	for _, transferFunc := range listOfTransferFunc {
 		builtInFunc, err := b.builtInFunctions.Get(transferFunc)

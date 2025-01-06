@@ -1,7 +1,7 @@
-github.com/TerraDharitri/drt-go-core v0.0.1 h1:1aiBFCHColhI9Xl5dBDFKTqOlr/5yaBI8OyHWfP2y1w=
-github.com/TerraDharitri/drt-go-core v0.0.1/go.mod h1:HNjh9dLfGFIjKqyEZURem+55NxjwHQnJFErTkBsWyIc=
-github.com/TerraDharitri/drt-go-logger v0.0.1 h1:TQDlbp4C7z9Hvuca6CQK8RcsrJQPiZEEikuuB8Zyl4A=
-github.com/TerraDharitri/drt-go-logger v0.0.1/go.mod h1:Tz6sxWdKtfNCsLlwdWiuRPwT1+XdmlmcNdxdcpvPqRI=
+github.com/TerraDharitri/drt-go-core v0.0.3 h1:B3A0pYcEIo4GL7JNub5tDvIm/Ee3B9ejN3F2EbKKKpE=
+github.com/TerraDharitri/drt-go-core v0.0.3/go.mod h1:HNjh9dLfGFIjKqyEZURem+55NxjwHQnJFErTkBsWyIc=
+github.com/TerraDharitri/drt-go-logger v0.0.2 h1:pPBKAMP46WxLXacPi5UybR6PKPEd//Ihx3SZ2n33ZB0=
+github.com/TerraDharitri/drt-go-logger v0.0.2/go.mod h1:ZD69xyzmokfd3/HdENbSBBczjyDrZ6Lc9gwa8ALPPtg=
 github.com/TerraDharitri/protobuf v0.0.1 h1:cxiQ6ZZLcavw0S/rPeGWl6tTkVn38r6Qo3FEL+NVWSI=
 github.com/TerraDharitri/protobuf v0.0.1/go.mod h1:nR0KaR7D76i4HeO5ynVn0k2AhPtkjlgURJ3/w2MSCtg=
 github.com/aead/siphash v1.0.1/go.mod h1:Nywa3cDsYNNK3gaciGTWPwHt0wlpNV15vwmswBAUSII=

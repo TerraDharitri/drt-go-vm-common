@@ -6,6 +6,8 @@ type GlobalSettingsHandlerStub struct {
 	IsLimiterTransferCalled                     func(token []byte) bool
 	IsBurnForAllCalled                          func(token []byte) bool
 	IsSenderOrDestinationWithTransferRoleCalled func(sender, destionation, tokenID []byte) bool
+	GetTokenTypeCalled                          func(dcdtTokenKey []byte) (uint32, error)
+	SetTokenTypeCalled                          func(dcdtTokenKey []byte, tokenType uint32) error
 }
 
 // IsPaused -
@@ -38,6 +40,22 @@ func (p *GlobalSettingsHandlerStub) IsSenderOrDestinationWithTransferRole(sender
 		return p.IsSenderOrDestinationWithTransferRoleCalled(sender, destination, tokenID)
 	}
 	return false
+}
+
+// GetTokenType -
+func (p *GlobalSettingsHandlerStub) GetTokenType(dcdtTokenKey []byte) (uint32, error) {
+	if p.GetTokenTypeCalled != nil {
+		return p.GetTokenTypeCalled(dcdtTokenKey)
+	}
+	return 0, nil
+}
+
+// SetTokenType -
+func (p *GlobalSettingsHandlerStub) SetTokenType(dcdtTokenKey []byte, tokenType uint32) error {
+	if p.SetTokenTypeCalled != nil {
+		return p.SetTokenTypeCalled(dcdtTokenKey, tokenType)
+	}
+	return nil
 }
 
 // IsInterfaceNil -

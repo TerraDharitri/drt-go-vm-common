@@ -20,13 +20,18 @@ type BuiltInCost struct {
 	DCDTBurn                 uint64
 	DCDTLocalMint            uint64
 	DCDTLocalBurn            uint64
+	DCDTModifyRoyalties      uint64
+	DCDTModifyCreator        uint64
 	DCDTNFTCreate            uint64
+	DCDTNFTRecreate          uint64
+	DCDTNFTUpdate            uint64
 	DCDTNFTAddQuantity       uint64
 	DCDTNFTBurn              uint64
 	DCDTNFTTransfer          uint64
 	DCDTNFTChangeCreateOwner uint64
 	DCDTNFTMultiTransfer     uint64
 	DCDTNFTAddURI            uint64
+	DCDTNFTSetNewURIs        uint64
 	DCDTNFTUpdateAttributes  uint64
 	SetGuardian              uint64
 	GuardAccount             uint64

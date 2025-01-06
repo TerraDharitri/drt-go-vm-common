@@ -55,7 +55,7 @@ func createMockArgsForNewDCDTDataStorage() ArgsNewDCDTDataStorage {
 }
 
 func createNewDCDTDataStorageHandlerWithArgs(
-	globalSettingsHandler vmcommon.DCDTGlobalSettingsHandler,
+	globalSettingsHandler vmcommon.GlobalMetadataHandler,
 	accounts vmcommon.AccountsAdapter,
 	enableEpochsHandler vmcommon.EnableEpochsHandler,
 ) *dcdtDataStorage {
@@ -135,6 +135,42 @@ func TestDcdtDataStorage_GetDCDTNFTTokenOnDestinationNoDataInSystemAcc(t *testin
 	assert.Equal(t, dcdtData, dcdtDataGet)
 }
 
+func TestDcdtDataStorage_GetDCDTNFTTokenOnDestinationTypeNonFungibleV2(t *testing.T) {
+	t.Parallel()
+
+	args := createMockArgsForNewDCDTDataStorage()
+	acnt := mock.NewUserAccount(vmcommon.SystemAccountAddress)
+	systemAccLoaded := false
+	args.Accounts = &mock.AccountsStub{
+		LoadAccountCalled: func(address []byte) (vmcommon.AccountHandler, error) {
+			systemAccLoaded = true
+			return acnt, nil
+		}}
+	e, _ := NewDCDTDataStorage(args)
+
+	userAcc := mock.NewAccountWrapMock([]byte("addr"))
+	dcdtData := &dcdt.DCDigitalToken{
+		TokenMetaData: &dcdt.MetaData{
+			Name:    []byte("test"),
+			Creator: []byte("creator"),
+		},
+		Type:  uint32(core.NonFungibleV2),
+		Value: big.NewInt(10),
+	}
+
+	tokenIdentifier := "testTkn"
+	key := baseDCDTKeyPrefix + tokenIdentifier
+	nonce := uint64(10)
+	dcdtDataBytes, _ := args.Marshalizer.Marshal(dcdtData)
+	tokenKey := append([]byte(key), big.NewInt(int64(nonce)).Bytes()...)
+	_ = userAcc.AccountDataHandler().SaveKeyValue(tokenKey, dcdtDataBytes)
+
+	dcdtDataGet, _, err := e.GetDCDTNFTTokenOnDestination(userAcc, []byte(key), nonce)
+	assert.Nil(t, err)
+	assert.Equal(t, dcdtData, dcdtDataGet)
+	assert.False(t, systemAccLoaded)
+}
+
 func TestDcdtDataStorage_GetDCDTNFTTokenOnDestinationGetNodeFromDbErr(t *testing.T) {
 	t.Parallel()
 
@@ -159,6 +195,7 @@ func TestDcdtDataStorage_GetDCDTNFTTokenOnDestinationGetDataFromSystemAcc(t *tes
 
 	userAcc := mock.NewAccountWrapMock([]byte("addr"))
 	dcdtData := &dcdt.DCDigitalToken{
+		Type:  uint32(core.NonFungible),
 		Value: big.NewInt(10),
 	}
 
@@ -191,6 +228,7 @@ func TestDcdtDataStorage_GetDCDTNFTTokenOnDestinationWithCustomSystemAccount(t *
 
 	userAcc := mock.NewAccountWrapMock([]byte("addr"))
 	dcdtData := &dcdt.DCDigitalToken{
+		Type:  uint32(core.NonFungible),
 		Value: big.NewInt(10),
 	}
 
@@ -264,6 +302,7 @@ func TestDcdtDataStorage_MarshalErrorOnSystemACC(t *testing.T) {
 
 	userAcc := mock.NewAccountWrapMock([]byte("addr"))
 	dcdtData := &dcdt.DCDigitalToken{
+		Type:  uint32(core.NonFungible),
 		Value: big.NewInt(10),
 	}
 
@@ -356,6 +395,7 @@ func TestDcdtDataStorage_SaveDCDTNFTTokenNoChangeInSystemAcc(t *testing.T) {
 
 	userAcc := mock.NewAccountWrapMock([]byte("addr"))
 	dcdtData := &dcdt.DCDigitalToken{
+		Type:  uint32(core.SemiFungible),
 		Value: big.NewInt(10),
 	}
 
@@ -375,8 +415,17 @@ func TestDcdtDataStorage_SaveDCDTNFTTokenNoChangeInSystemAcc(t *testing.T) {
 	_ = systemAcc.AccountDataHandler().SaveKeyValue(tokenKey, dcdtMetaDataBytes)
 
 	newMetaData := &dcdt.MetaData{Name: []byte("newName")}
-	transferDCDTData := &dcdt.DCDigitalToken{Value: big.NewInt(100), TokenMetaData: newMetaData}
-	_, err := e.SaveDCDTNFTToken([]byte("address"), userAcc, []byte(key), nonce, transferDCDTData, false, false)
+	transferDCDTData := &dcdt.DCDigitalToken{
+		Type:          uint32(core.SemiFungible),
+		Value:         big.NewInt(100),
+		TokenMetaData: newMetaData,
+	}
+	properties := vmcommon.NftSaveArgs{
+		MustUpdateAllFields:         false,
+		IsReturnWithError:           false,
+		KeepMetaDataOnZeroLiquidity: false,
+	}
+	_, err := e.SaveDCDTNFTToken([]byte("address"), userAcc, []byte(key), nonce, transferDCDTData, properties)
 	assert.Nil(t, err)
 
 	dcdtDataGet, _, err := e.GetDCDTNFTTokenOnDestination(userAcc, []byte(key), nonce)
@@ -402,6 +451,7 @@ func TestDcdtDataStorage_SaveDCDTNFTTokenAlwaysSaveTokenMetaDataEnabled(t *testi
 
 	t.Run("new token should not rewrite metadata", func(t *testing.T) {
 		newToken := &dcdt.DCDigitalToken{
+			Type:  uint32(core.SemiFungible),
 			Value: big.NewInt(10),
 		}
 		tokenIdentifier := "newTkn"
@@ -422,14 +472,24 @@ func TestDcdtDataStorage_SaveDCDTNFTTokenAlwaysSaveTokenMetaDataEnabled(t *testi
 		_ = systemAcc.AccountDataHandler().SaveKeyValue(tokenKey, dcdtMetaDataBytes)
 
 		newMetaData := &dcdt.MetaData{Name: []byte("newName")}
-		transferDCDTData := &dcdt.DCDigitalToken{Value: big.NewInt(100), TokenMetaData: newMetaData}
-		_, err := dataStorage.SaveDCDTNFTToken([]byte("address"), userAcc, []byte(key), nonce, transferDCDTData, false, false)
+		transferDCDTData := &dcdt.DCDigitalToken{
+			Type:          uint32(core.SemiFungible),
+			Value:         big.NewInt(100),
+			TokenMetaData: newMetaData,
+		}
+		properties := vmcommon.NftSaveArgs{
+			MustUpdateAllFields:         false,
+			IsReturnWithError:           false,
+			KeepMetaDataOnZeroLiquidity: false,
+		}
+		_, err := dataStorage.SaveDCDTNFTToken([]byte("address"), userAcc, []byte(key), nonce, transferDCDTData, properties)
 		assert.Nil(t, err)
 
 		dcdtDataGet, _, err := dataStorage.GetDCDTNFTTokenOnDestination(userAcc, []byte(key), nonce)
 		assert.Nil(t, err)
 
 		expectedDCDTData := &dcdt.DCDigitalToken{
+			Type:          uint32(core.SemiFungible),
 			Value:         big.NewInt(100),
 			TokenMetaData: metaData,
 		}
@@ -476,6 +536,7 @@ func TestDcdtDataStorage_SaveDCDTNFTTokenAlwaysSaveTokenMetaDataEnabled(t *testi
 		localDataStorage, _ := NewDCDTDataStorage(localArgs)
 
 		newToken := &dcdt.DCDigitalToken{
+			Type:  uint32(core.SemiFungible),
 			Value: big.NewInt(10),
 		}
 		tokenIdentifier := "newTkn"
@@ -495,8 +556,12 @@ func TestDcdtDataStorage_SaveDCDTNFTTokenAlwaysSaveTokenMetaDataEnabled(t *testi
 		_ = systemAcc.AccountDataHandler().SaveKeyValue(tokenKey, dcdtMetaDataBytes)
 
 		newMetaData := &dcdt.MetaData{Name: []byte("newName")}
-		transferDCDTData := &dcdt.DCDigitalToken{Value: big.NewInt(100), TokenMetaData: newMetaData}
+		transferDCDTData := &dcdt.DCDigitalToken{
+			Type:          uint32(core.SemiFungible),
+			Value:         big.NewInt(100),
+			TokenMetaData: newMetaData}
 		expectedDCDTData := &dcdt.DCDigitalToken{
+			Type:          uint32(core.SemiFungible),
 			Value:         big.NewInt(100),
 			TokenMetaData: metaData,
 		}
@@ -525,7 +590,12 @@ func setAndGetStoredToken(
 	nonce uint64,
 	transferDCDTData *dcdt.DCDigitalToken,
 ) *dcdt.DCDigitalToken {
-	_, err := dcdtDataStorage.SaveDCDTNFTToken([]byte("address"), userAcc, key, nonce, transferDCDTData, false, false)
+	properties := vmcommon.NftSaveArgs{
+		MustUpdateAllFields:         false,
+		IsReturnWithError:           false,
+		KeepMetaDataOnZeroLiquidity: false,
+	}
+	_, err := dcdtDataStorage.SaveDCDTNFTToken([]byte("address"), userAcc, key, nonce, transferDCDTData, properties)
 	assert.Nil(tb, err)
 
 	dcdtDataGet, _, err := dcdtDataStorage.GetDCDTNFTTokenOnDestination(userAcc, key, nonce)
@@ -543,6 +613,7 @@ func TestDcdtDataStorage_SaveDCDTNFTTokenWhenQuantityZero(t *testing.T) {
 	userAcc := mock.NewAccountWrapMock([]byte("addr"))
 	nonce := uint64(10)
 	dcdtData := &dcdt.DCDigitalToken{
+		Type:  uint32(core.SemiFungible),
 		Value: big.NewInt(10),
 		TokenMetaData: &dcdt.MetaData{
 			Name:  []byte("test"),
@@ -557,7 +628,12 @@ func TestDcdtDataStorage_SaveDCDTNFTTokenWhenQuantityZero(t *testing.T) {
 	_ = userAcc.AccountDataHandler().SaveKeyValue(tokenKey, dcdtDataBytes)
 
 	dcdtData.Value = big.NewInt(0)
-	_, err := e.SaveDCDTNFTToken([]byte("address"), userAcc, []byte(key), nonce, dcdtData, false, false)
+	properties := vmcommon.NftSaveArgs{
+		MustUpdateAllFields:         false,
+		IsReturnWithError:           false,
+		KeepMetaDataOnZeroLiquidity: false,
+	}
+	_, err := e.SaveDCDTNFTToken([]byte("address"), userAcc, []byte(key), nonce, dcdtData, properties)
 	assert.Nil(t, err)
 
 	val, _, err := userAcc.AccountDataHandler().RetrieveValue(tokenKey)
@@ -567,6 +643,70 @@ func TestDcdtDataStorage_SaveDCDTNFTTokenWhenQuantityZero(t *testing.T) {
 	dcdtMetaData, err := e.getDCDTMetaDataFromSystemAccount(tokenKey, defaultQueryOptions())
 	assert.Nil(t, err)
 	assert.Equal(t, dcdtData.TokenMetaData, dcdtMetaData)
+}
+
+func TestDcdtDataStorage_SaveDCDTNFTToken(t *testing.T) {
+	t.Parallel()
+
+	t.Run("migrate metadata from system account to user account for NonFungibleV2", func(t *testing.T) {
+		t.Parallel()
+
+		tokenIdentifier := "newTkn"
+		nonce := uint64(10)
+		key := baseDCDTKeyPrefix + tokenIdentifier
+		tokenKey := append([]byte(key), big.NewInt(int64(nonce)).Bytes()...)
+
+		args := createMockArgsForNewDCDTDataStorage()
+		args.GlobalSettingsHandler = &mock.GlobalSettingsHandlerStub{
+			GetTokenTypeCalled: func(dcdtTokenKey []byte) (uint32, error) {
+				return uint32(core.NonFungibleV2), nil
+			},
+		}
+		args.EnableEpochsHandler = &mock.EnableEpochsHandlerStub{
+			IsFlagEnabledCalled: func(flag core.EnableEpochFlag) bool {
+				return flag == SaveToSystemAccountFlag || flag == SendAlwaysFlag || flag == DynamicDcdtFlag
+			},
+		}
+		dataStorage, _ := NewDCDTDataStorage(args)
+		userAcc := mock.NewAccountWrapMock([]byte("addr"))
+		nftToken := &dcdt.DCDigitalToken{
+			Value: big.NewInt(10),
+		}
+		_ = saveDCDTData(userAcc, nftToken, tokenKey, args.Marshalizer)
+
+		systemAcc, _ := dataStorage.getSystemAccount(defaultQueryOptions())
+		metaData := &dcdt.MetaData{
+			Name: []byte("test"),
+		}
+		dcdtDataOnSystemAcc := &dcdt.DCDigitalToken{
+			TokenMetaData: metaData,
+			Reserved:      []byte{1},
+		}
+		dcdtMetaDataBytes, _ := args.Marshalizer.Marshal(dcdtDataOnSystemAcc)
+		_ = systemAcc.AccountDataHandler().SaveKeyValue(tokenKey, dcdtMetaDataBytes)
+
+		nftToken.Type = uint32(core.NonFungible)
+		nftToken.TokenMetaData = metaData
+
+		properties := vmcommon.NftSaveArgs{
+			MustUpdateAllFields:         false,
+			IsReturnWithError:           false,
+			KeepMetaDataOnZeroLiquidity: false,
+		}
+		_, err := dataStorage.SaveDCDTNFTToken([]byte("address"), userAcc, []byte(key), nonce, nftToken, properties)
+		assert.Nil(t, err)
+
+		// metadata has been removed from the system account
+		val, _, _ := systemAcc.AccountDataHandler().RetrieveValue(tokenKey)
+		assert.Nil(t, val)
+
+		nftToken.Type = uint32(core.NonFungibleV2)
+		nftTokenBytes, _ := args.Marshalizer.Marshal(nftToken)
+		// metadata has been added to the user account
+		val, _, err = userAcc.RetrieveValue(tokenKey)
+		assert.Nil(t, err)
+		assert.Equal(t, nftTokenBytes, val)
+	})
 }
 
 func TestDcdtDataStorage_WasAlreadySentToDestinationShard(t *testing.T) {
@@ -645,7 +785,7 @@ func TestDcdtDataStorage_WasAlreadySentToDestinationShard(t *testing.T) {
 	assert.Nil(t, err)
 }
 
-func TestDcdtDataStorage_SaveNFTMetaDataToSystemAccount(t *testing.T) {
+func TestDcdtDataStorage_SaveNFTMetaData(t *testing.T) {
 	t.Parallel()
 
 	args := createMockArgsForNewDCDTDataStorage()
@@ -657,19 +797,19 @@ func TestDcdtDataStorage_SaveNFTMetaDataToSystemAccount(t *testing.T) {
 	enableEpochsHandler.IsFlagEnabledCalled = func(flag core.EnableEpochFlag) bool {
 		return flag == SendAlwaysFlag
 	}
-	err := e.SaveNFTMetaDataToSystemAccount(nil)
+	err := e.SaveNFTMetaData(nil)
 	assert.Nil(t, err)
 
 	enableEpochsHandler.IsFlagEnabledCalled = func(flag core.EnableEpochFlag) bool {
 		return flag == SaveToSystemAccountFlag || flag == SendAlwaysFlag
 	}
-	err = e.SaveNFTMetaDataToSystemAccount(nil)
+	err = e.SaveNFTMetaData(nil)
 	assert.Nil(t, err)
 
 	enableEpochsHandler.IsFlagEnabledCalled = func(flag core.EnableEpochFlag) bool {
 		return flag == SaveToSystemAccountFlag
 	}
-	err = e.SaveNFTMetaDataToSystemAccount(nil)
+	err = e.SaveNFTMetaData(nil)
 	assert.Equal(t, err, ErrNilTransactionHandler)
 
 	scr := &smartContractResult.SmartContractResult{
@@ -677,7 +817,7 @@ func TestDcdtDataStorage_SaveNFTMetaDataToSystemAccount(t *testing.T) {
 		RcvAddr: []byte("address2"),
 	}
 
-	err = e.SaveNFTMetaDataToSystemAccount(scr)
+	err = e.SaveNFTMetaData(scr)
 	assert.Nil(t, err)
 
 	shardCoordinator.ComputeIdCalled = func(address []byte) uint32 {
@@ -696,23 +836,23 @@ func TestDcdtDataStorage_SaveNFTMetaDataToSystemAccount(t *testing.T) {
 		return 1
 	}
 
-	err = e.SaveNFTMetaDataToSystemAccount(scr)
+	err = e.SaveNFTMetaData(scr)
 	assert.Nil(t, err)
 
 	scr.Data = []byte("function")
-	err = e.SaveNFTMetaDataToSystemAccount(scr)
+	err = e.SaveNFTMetaData(scr)
 	assert.Nil(t, err)
 
 	scr.Data = []byte("function@01@02@03@04")
-	err = e.SaveNFTMetaDataToSystemAccount(scr)
+	err = e.SaveNFTMetaData(scr)
 	assert.Nil(t, err)
 
 	scr.Data = []byte(core.BuiltInFunctionDCDTNFTTransfer + "@01@02@03@04")
-	err = e.SaveNFTMetaDataToSystemAccount(scr)
+	err = e.SaveNFTMetaData(scr)
 	assert.NotNil(t, err)
 
 	scr.Data = []byte(core.BuiltInFunctionDCDTNFTTransfer + "@01@02@03@00")
-	err = e.SaveNFTMetaDataToSystemAccount(scr)
+	err = e.SaveNFTMetaData(scr)
 	assert.Nil(t, err)
 
 	tickerID := []byte("TCK")
@@ -724,7 +864,7 @@ func TestDcdtDataStorage_SaveNFTMetaDataToSystemAccount(t *testing.T) {
 	}
 	dcdtMarshalled, _ := args.Marshalizer.Marshal(dcdtData)
 	scr.Data = []byte(core.BuiltInFunctionDCDTNFTTransfer + "@" + hex.EncodeToString(tickerID) + "@01@01@" + hex.EncodeToString(dcdtMarshalled))
-	err = e.SaveNFTMetaDataToSystemAccount(scr)
+	err = e.SaveNFTMetaData(scr)
 	assert.Nil(t, err)
 
 	key := baseDCDTKeyPrefix + string(tickerID)
@@ -755,7 +895,7 @@ func TestDcdtDataStorage_getDCDTDigitalTokenDataFromSystemAccountGetNodeFromDbEr
 	assert.True(t, core.IsGetNodeFromDBError(err))
 }
 
-func TestDcdtDataStorage_SaveNFTMetaDataToSystemAccountWithMultiTransfer(t *testing.T) {
+func TestDcdtDataStorage_SaveNFTMetaDataWithMultiTransfer(t *testing.T) {
 	t.Parallel()
 
 	args := createMockArgsForNewDCDTDataStorage()
@@ -798,16 +938,16 @@ func TestDcdtDataStorage_SaveNFTMetaDataToSystemAccountWithMultiTransfer(t *test
 	}
 	dcdtMarshalled, _ := args.Marshalizer.Marshal(dcdtData)
 	scr.Data = []byte(core.BuiltInFunctionMultiDCDTNFTTransfer + "@00@" + hex.EncodeToString(tickerID) + "@01@01@" + hex.EncodeToString(dcdtMarshalled))
-	err := e.SaveNFTMetaDataToSystemAccount(scr)
+	err := e.SaveNFTMetaData(scr)
 	assert.True(t, errors.Is(err, ErrInvalidArguments))
 
 	scr.Data = []byte(core.BuiltInFunctionMultiDCDTNFTTransfer + "@02@" + hex.EncodeToString(tickerID) + "@01@01@" + hex.EncodeToString(dcdtMarshalled))
-	err = e.SaveNFTMetaDataToSystemAccount(scr)
+	err = e.SaveNFTMetaData(scr)
 	assert.True(t, errors.Is(err, ErrInvalidArguments))
 
 	scr.Data = []byte(core.BuiltInFunctionMultiDCDTNFTTransfer + "@02@" + hex.EncodeToString(tickerID) + "@02@10@" +
 		hex.EncodeToString(tickerID) + "@01@" + hex.EncodeToString(dcdtMarshalled))
-	err = e.SaveNFTMetaDataToSystemAccount(scr)
+	err = e.SaveNFTMetaData(scr)
 	assert.Nil(t, err)
 
 	key := baseDCDTKeyPrefix + string(tickerID)
@@ -913,32 +1053,248 @@ func TestDcdtDataStorage_AddToLiquiditySystemAcc(t *testing.T) {
 
 	tokenKey := append(e.keyPrefix, []byte("TOKEN-ababab")...)
 	nonce := uint64(10)
-	err := e.AddToLiquiditySystemAcc(tokenKey, nonce, big.NewInt(10))
+	err := e.AddToLiquiditySystemAcc(tokenKey, 3, nonce, big.NewInt(10), false)
 	assert.Equal(t, err, ErrNilDCDTData)
 
 	systemAcc, _ := e.getSystemAccount(defaultQueryOptions())
-	dcdtData := &dcdt.DCDigitalToken{Value: big.NewInt(0)}
+	dcdtData := &dcdt.DCDigitalToken{
+		Type:  uint32(core.SemiFungible),
+		Value: big.NewInt(0),
+	}
 	marshalledData, _ := e.marshaller.Marshal(dcdtData)
 
 	dcdtNFTTokenKey := computeDCDTNFTTokenKey(tokenKey, nonce)
 	_ = systemAcc.AccountDataHandler().SaveKeyValue(dcdtNFTTokenKey, marshalledData)
 
-	err = e.AddToLiquiditySystemAcc(tokenKey, nonce, big.NewInt(10))
+	err = e.AddToLiquiditySystemAcc(tokenKey, 3, nonce, big.NewInt(10), false)
 	assert.Nil(t, err)
 
-	dcdtData = &dcdt.DCDigitalToken{Value: big.NewInt(10), Reserved: []byte{1}}
+	dcdtData = &dcdt.DCDigitalToken{
+		Type:     uint32(core.SemiFungible),
+		Value:    big.NewInt(10),
+		Reserved: []byte{1},
+	}
 	marshalledData, _ = e.marshaller.Marshal(dcdtData)
 
 	_ = systemAcc.AccountDataHandler().SaveKeyValue(dcdtNFTTokenKey, marshalledData)
-	err = e.AddToLiquiditySystemAcc(tokenKey, nonce, big.NewInt(10))
+	err = e.AddToLiquiditySystemAcc(tokenKey, 3, nonce, big.NewInt(10), false)
 	assert.Nil(t, err)
 
 	dcdtData, _, _ = e.getDCDTDigitalTokenDataFromSystemAccount(dcdtNFTTokenKey, defaultQueryOptions())
 	assert.Equal(t, dcdtData.Value, big.NewInt(20))
 
-	err = e.AddToLiquiditySystemAcc(tokenKey, nonce, big.NewInt(-20))
+	err = e.AddToLiquiditySystemAcc(tokenKey, 3, nonce, big.NewInt(-20), false)
 	assert.Nil(t, err)
 
 	dcdtData, _, _ = e.getDCDTDigitalTokenDataFromSystemAccount(dcdtNFTTokenKey, defaultQueryOptions())
 	assert.Nil(t, dcdtData)
+}
+
+func TestDcdtDataStorage_ShouldSaveMetadataInSystemAccount(t *testing.T) {
+	t.Parallel()
+
+	t.Run("returns false if SaveToSystemAccountFlag flag disabled", func(t *testing.T) {
+		t.Parallel()
+
+		args := createMockArgsForNewDCDTDataStorage()
+		args.EnableEpochsHandler = &mock.EnableEpochsHandlerStub{
+			IsFlagEnabledCalled: func(flag core.EnableEpochFlag) bool {
+				return false
+			},
+		}
+		e, _ := NewDCDTDataStorage(args)
+
+		assert.False(t, e.shouldSaveMetadataInSystemAccount(uint32(core.NonFungibleV2)))
+	})
+
+	t.Run("returns true if dynamic token type", func(t *testing.T) {
+		t.Parallel()
+
+		args := createMockArgsForNewDCDTDataStorage()
+		args.EnableEpochsHandler = &mock.EnableEpochsHandlerStub{
+			IsFlagEnabledCalled: func(flag core.EnableEpochFlag) bool {
+				return flag == SaveToSystemAccountFlag
+			},
+		}
+		e, _ := NewDCDTDataStorage(args)
+
+		assert.False(t, e.shouldSaveMetadataInSystemAccount(uint32(core.DynamicNFT)))
+		assert.True(t, e.shouldSaveMetadataInSystemAccount(uint32(core.DynamicSFT)))
+		assert.True(t, e.shouldSaveMetadataInSystemAccount(uint32(core.DynamicMeta)))
+	})
+
+	t.Run("returns false if NonFungibleV2", func(t *testing.T) {
+		t.Parallel()
+
+		args := createMockArgsForNewDCDTDataStorage()
+		args.EnableEpochsHandler = &mock.EnableEpochsHandlerStub{
+			IsFlagEnabledCalled: func(flag core.EnableEpochFlag) bool {
+				return flag == SaveToSystemAccountFlag
+			},
+		}
+		e, _ := NewDCDTDataStorage(args)
+
+		assert.False(t, e.shouldSaveMetadataInSystemAccount(uint32(core.NonFungibleV2)))
+		assert.True(t, e.shouldSaveMetadataInSystemAccount(uint32(core.NonFungible)))
+	})
+}
+
+func TestDcdtDataStorage_GetMetaDataFromSystemAccount(t *testing.T) {
+	t.Parallel()
+
+	key := []byte("tokenKey")
+	nonce := uint64(10)
+	keyNonce := append(key, big.NewInt(int64(nonce)).Bytes()...)
+
+	args := createMockArgsForNewDCDTDataStorage()
+	acnt := mock.NewUserAccount(vmcommon.SystemAccountAddress)
+
+	args.Accounts = &mock.AccountsStub{
+		LoadAccountCalled: func(address []byte) (vmcommon.AccountHandler, error) {
+			return acnt, nil
+		}}
+	e, _ := NewDCDTDataStorage(args)
+
+	metaData := &dcdt.MetaData{
+		Name: []byte("test"),
+	}
+	dcdtData := &dcdt.DCDigitalToken{
+		TokenMetaData: metaData,
+	}
+	dcdtDataBytes, _ := e.marshaller.Marshal(dcdtData)
+	_ = acnt.SaveKeyValue(keyNonce, dcdtDataBytes)
+
+	retrievedMetaData, err := e.GetMetaDataFromSystemAccount(key, nonce)
+	assert.Nil(t, err)
+	assert.Equal(t, dcdtData, retrievedMetaData)
+}
+
+func TestDcdtDataStorage_SaveMetaDataToSystemAccount(t *testing.T) {
+	t.Parallel()
+
+	key := []byte("tokenKey")
+	nonce := uint64(10)
+	keyNonce := append(key, big.NewInt(int64(nonce)).Bytes()...)
+
+	args := createMockArgsForNewDCDTDataStorage()
+	acnt := mock.NewUserAccount(vmcommon.SystemAccountAddress)
+	args.Accounts = &mock.AccountsStub{
+		LoadAccountCalled: func(address []byte) (vmcommon.AccountHandler, error) {
+			return acnt, nil
+		}}
+	e, _ := NewDCDTDataStorage(args)
+
+	metaData := &dcdt.MetaData{
+		Name: []byte("test"),
+	}
+	dcdtData := &dcdt.DCDigitalToken{
+		TokenMetaData: metaData,
+	}
+
+	err := e.SaveMetaDataToSystemAccount(key, nonce, dcdtData)
+	assert.Nil(t, err)
+
+	retrievedVal, _, err := acnt.AccountDataHandler().RetrieveValue(keyNonce)
+	assert.Nil(t, err)
+	dcdtDataBytes, _ := e.marshaller.Marshal(dcdtData)
+	assert.Equal(t, dcdtDataBytes, retrievedVal)
+}
+
+func TestDcdtDataStorage_SaveDCDTNFTToken_migrateTypeAndMetadata(t *testing.T) {
+	t.Parallel()
+
+	t.Run("migrate token type for NonFungibleV2", func(t *testing.T) {
+		t.Parallel()
+
+		saveDCDTNFTTokenMigrateTypeAndMetadata(t, core.NonFungibleV2)
+	})
+	t.Run("migrate metadata for SemiFungible", func(t *testing.T) {
+		t.Parallel()
+
+		saveDCDTNFTTokenMigrateTypeAndMetadata(t, core.SemiFungible)
+	})
+	t.Run("migrate metadata for MetaFungible", func(t *testing.T) {
+		t.Parallel()
+
+		saveDCDTNFTTokenMigrateTypeAndMetadata(t, core.MetaFungible)
+	})
+	t.Run("migrate metadata for DynamicNFT", func(t *testing.T) {
+		t.Parallel()
+
+		saveDCDTNFTTokenMigrateTypeAndMetadata(t, core.DynamicNFT)
+	})
+	t.Run("migrate metadata for DynamicMeta", func(t *testing.T) {
+		t.Parallel()
+
+		saveDCDTNFTTokenMigrateTypeAndMetadata(t, core.DynamicMeta)
+	})
+	t.Run("migrate metadata for DynamicSFT", func(t *testing.T) {
+		t.Parallel()
+
+		saveDCDTNFTTokenMigrateTypeAndMetadata(t, core.DynamicSFT)
+	})
+
+}
+
+func saveDCDTNFTTokenMigrateTypeAndMetadata(t *testing.T, tokenType core.DCDTType) {
+	args := createMockArgsForNewDCDTDataStorage()
+	args.EnableEpochsHandler = &mock.EnableEpochsHandlerStub{
+		IsFlagEnabledCalled: func(flag core.EnableEpochFlag) bool {
+			return flag == SaveToSystemAccountFlag || flag == SendAlwaysFlag || flag == DynamicDcdtFlag
+		},
+	}
+	args.GlobalSettingsHandler = &mock.GlobalSettingsHandlerStub{
+		GetTokenTypeCalled: func(dcdtTokenKey []byte) (uint32, error) {
+			return uint32(tokenType), nil
+		},
+	}
+	e, _ := NewDCDTDataStorage(args)
+
+	userAcc := mock.NewAccountWrapMock([]byte("addr"))
+	dcdtData := &dcdt.DCDigitalToken{
+		Value: big.NewInt(10),
+		Type:  uint32(core.NonFungible),
+	}
+
+	tokenIdentifier := "testTkn"
+	key := baseDCDTKeyPrefix + tokenIdentifier
+	nonce := uint64(10)
+	dcdtDataBytes, _ := args.Marshalizer.Marshal(dcdtData)
+	tokenKey := append([]byte(key), big.NewInt(int64(nonce)).Bytes()...)
+	_ = userAcc.AccountDataHandler().SaveKeyValue(tokenKey, dcdtDataBytes)
+
+	systemAcc, _ := e.getSystemAccount(defaultQueryOptions())
+	metaData := &dcdt.MetaData{
+		Name: []byte("test"),
+	}
+	dcdtDataOnSystemAcc := &dcdt.DCDigitalToken{TokenMetaData: metaData}
+	dcdtMetaDataBytes, _ := args.Marshalizer.Marshal(dcdtDataOnSystemAcc)
+	_ = systemAcc.AccountDataHandler().SaveKeyValue(tokenKey, dcdtMetaDataBytes)
+
+	retrievedDcdtData, _, err := e.GetDCDTNFTTokenOnDestination(userAcc, []byte(key), nonce)
+	assert.Nil(t, err)
+	assert.Equal(t, uint32(core.NonFungible), retrievedDcdtData.Type)
+
+	dcdtData.TokenMetaData = metaData
+	properties := vmcommon.NftSaveArgs{
+		MustUpdateAllFields:         false,
+		IsReturnWithError:           false,
+		KeepMetaDataOnZeroLiquidity: false,
+	}
+	_, err = e.SaveDCDTNFTToken([]byte("address"), userAcc, []byte(key), nonce, dcdtData, properties)
+	assert.Nil(t, err)
+
+	retrievedDcdtData, _, err = e.GetDCDTNFTTokenOnDestination(userAcc, []byte(key), nonce)
+	assert.Nil(t, err)
+	assert.Equal(t, uint32(tokenType), retrievedDcdtData.Type)
+
+	if tokenType == core.NonFungibleV2 {
+		retrievedMetaData, err := e.GetMetaDataFromSystemAccount([]byte(key), nonce)
+		assert.Nil(t, err)
+		assert.Nil(t, retrievedMetaData)
+	} else {
+		retrievedMetaData, err := e.GetMetaDataFromSystemAccount([]byte(key), nonce)
+		assert.Nil(t, err)
+		assert.Equal(t, &dcdt.DCDigitalToken{TokenMetaData: metaData}, retrievedMetaData)
+	}
 }

@@ -101,12 +101,17 @@ func (e *dcdtNFTBurn) ProcessBuiltinFunction(
 
 	dcdtData.Value.Sub(dcdtData.Value, quantityToBurn)
 
-	_, err = e.dcdtStorageHandler.SaveDCDTNFTToken(acntSnd.AddressBytes(), acntSnd, dcdtTokenKey, nonce, dcdtData, false, vmInput.ReturnCallAfterError)
+	properties := vmcommon.NftSaveArgs{
+		MustUpdateAllFields:         false,
+		IsReturnWithError:           vmInput.ReturnCallAfterError,
+		KeepMetaDataOnZeroLiquidity: false,
+	}
+	_, err = e.dcdtStorageHandler.SaveDCDTNFTToken(acntSnd.AddressBytes(), acntSnd, dcdtTokenKey, nonce, dcdtData, properties)
 	if err != nil {
 		return nil, err
 	}
 
-	err = e.dcdtStorageHandler.AddToLiquiditySystemAcc(dcdtTokenKey, nonce, big.NewInt(0).Neg(quantityToBurn))
+	err = e.dcdtStorageHandler.AddToLiquiditySystemAcc(dcdtTokenKey, dcdtData.Type, nonce, big.NewInt(0).Neg(quantityToBurn), false)
 	if err != nil {
 		return nil, err
 	}

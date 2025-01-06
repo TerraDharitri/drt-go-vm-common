@@ -24,7 +24,7 @@ type dcdtNFTCreate struct {
 	keyPrefix             []byte
 	accounts              vmcommon.AccountsAdapter
 	marshaller            vmcommon.Marshalizer
-	globalSettingsHandler vmcommon.DCDTGlobalSettingsHandler
+	globalSettingsHandler vmcommon.GlobalMetadataHandler
 	rolesHandler          vmcommon.DCDTRoleHandler
 	funcGasCost           uint64
 	gasConfig             vmcommon.BaseOperationCost
@@ -38,7 +38,7 @@ func NewDCDTNFTCreateFunc(
 	funcGasCost uint64,
 	gasConfig vmcommon.BaseOperationCost,
 	marshaller vmcommon.Marshalizer,
-	globalSettingsHandler vmcommon.DCDTGlobalSettingsHandler,
+	globalSettingsHandler vmcommon.GlobalMetadataHandler,
 	rolesHandler vmcommon.DCDTRoleHandler,
 	dcdtStorageHandler vmcommon.DCDTNFTStorageHandler,
 	accounts vmcommon.AccountsAdapter,
@@ -181,9 +181,14 @@ func (e *dcdtNFTCreate) ProcessBuiltinFunction(
 		return nil, fmt.Errorf("%w max length for quantity in nft create is %d", ErrInvalidArguments, maxLenForAddNFTQuantity)
 	}
 
+	dcdtType, err := e.getTokenType(tokenID)
+	if err != nil {
+		return nil, err
+	}
+
 	nextNonce := nonce + 1
 	dcdtData := &dcdt.DCDigitalToken{
-		Type:  uint32(core.NonFungible),
+		Type:  dcdtType,
 		Value: quantity,
 		TokenMetaData: &dcdt.MetaData{
 			Nonce:      nextNonce,
@@ -196,11 +201,16 @@ func (e *dcdtNFTCreate) ProcessBuiltinFunction(
 		},
 	}
 
-	_, err = e.dcdtStorageHandler.SaveDCDTNFTToken(accountWithRoles.AddressBytes(), accountWithRoles, dcdtTokenKey, nextNonce, dcdtData, true, vmInput.ReturnCallAfterError)
+	properties := vmcommon.NftSaveArgs{
+		MustUpdateAllFields:         true,
+		IsReturnWithError:           vmInput.ReturnCallAfterError,
+		KeepMetaDataOnZeroLiquidity: false,
+	}
+	_, err = e.dcdtStorageHandler.SaveDCDTNFTToken(accountWithRoles.AddressBytes(), accountWithRoles, dcdtTokenKey, nextNonce, dcdtData, properties)
 	if err != nil {
 		return nil, err
 	}
-	err = e.dcdtStorageHandler.AddToLiquiditySystemAcc(dcdtTokenKey, nextNonce, quantity)
+	err = e.dcdtStorageHandler.AddToLiquiditySystemAcc(dcdtTokenKey, dcdtData.Type, nextNonce, quantity, false)
 	if err != nil {
 		return nil, err
 	}
@@ -231,6 +241,15 @@ func (e *dcdtNFTCreate) ProcessBuiltinFunction(
 	addDCDTEntryInVMOutput(vmOutput, []byte(core.BuiltInFunctionDCDTNFTCreate), vmInput.Arguments[0], nextNonce, quantity, vmInput.CallerAddr, dcdtDataBytes)
 
 	return vmOutput, nil
+}
+
+func (e *dcdtNFTCreate) getTokenType(tokenID []byte) (uint32, error) {
+	if !e.enableEpochsHandler.IsFlagEnabled(DynamicDcdtFlag) {
+		return uint32(core.NonFungible), nil
+	}
+
+	dcdtTokenKey := append([]byte(baseDCDTKeyPrefix), tokenID...)
+	return e.globalSettingsHandler.GetTokenType(dcdtTokenKey)
 }
 
 func (e *dcdtNFTCreate) getAccount(address []byte) (vmcommon.UserAccountHandler, error) {

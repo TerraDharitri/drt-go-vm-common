@@ -376,7 +376,7 @@ func TestDcdtNFTBurnFunc_ProcessBuiltinFunctionShouldWork(t *testing.T) {
 	_ = userAcc.AccountDataHandler().SaveKeyValue(nftTokenKey, dcdtDataBytes)
 
 	_ = storageHandler.saveDCDTMetaDataToSystemAccount(userAcc, 0, nftTokenKey, nonce.Uint64(), dcdtData, true)
-	_ = storageHandler.AddToLiquiditySystemAcc([]byte(key), nonce.Uint64(), initialQuantity)
+	_ = storageHandler.AddToLiquiditySystemAcc([]byte(key), 0, nonce.Uint64(), initialQuantity, false)
 	output, err := ebf.ProcessBuiltinFunction(
 		userAcc,
 		nil,
@@ -438,7 +438,7 @@ func TestDcdtNFTBurnFunc_ProcessBuiltinFunctionWithGlobalBurn(t *testing.T) {
 	tokenKey := append([]byte(key), nonce.Bytes()...)
 	_ = userAcc.AccountDataHandler().SaveKeyValue(tokenKey, dcdtDataBytes)
 	_ = storageHandler.saveDCDTMetaDataToSystemAccount(userAcc, 0, tokenKey, nonce.Uint64(), dcdtData, true)
-	_ = storageHandler.AddToLiquiditySystemAcc([]byte(key), nonce.Uint64(), initialQuantity)
+	_ = storageHandler.AddToLiquiditySystemAcc([]byte(key), 0, nonce.Uint64(), initialQuantity, false)
 
 	output, err := ebf.ProcessBuiltinFunction(
 		userAcc,

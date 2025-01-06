@@ -6,17 +6,21 @@ import (
 
 	"github.com/TerraDharitri/drt-go-core/core"
 	"github.com/TerraDharitri/drt-go-core/core/check"
+	"github.com/TerraDharitri/drt-go-core/marshal"
 	vmcommon "github.com/TerraDharitri/drt-go-vm-common"
 )
 
 type dcdtNFTAddUri struct {
 	baseActiveHandler
+	vmcommon.BlockchainDataProvider
 	keyPrefix             []byte
 	dcdtStorageHandler    vmcommon.DCDTNFTStorageHandler
 	globalSettingsHandler vmcommon.DCDTGlobalSettingsHandler
 	rolesHandler          vmcommon.DCDTRoleHandler
 	gasConfig             vmcommon.BaseOperationCost
+	enableEpochsHandler   vmcommon.EnableEpochsHandler
 	funcGasCost           uint64
+	marshaller            marshal.Marshalizer
 	mutExecution          sync.RWMutex
 }
 
@@ -28,6 +32,7 @@ func NewDCDTNFTAddUriFunc(
 	globalSettingsHandler vmcommon.DCDTGlobalSettingsHandler,
 	rolesHandler vmcommon.DCDTRoleHandler,
 	enableEpochsHandler vmcommon.EnableEpochsHandler,
+	marshaller marshal.Marshalizer,
 ) (*dcdtNFTAddUri, error) {
 	if check.IfNil(dcdtStorageHandler) {
 		return nil, ErrNilDCDTNFTStorageHandler
@@ -41,15 +46,21 @@ func NewDCDTNFTAddUriFunc(
 	if check.IfNil(enableEpochsHandler) {
 		return nil, ErrNilEnableEpochsHandler
 	}
+	if check.IfNil(marshaller) {
+		return nil, ErrNilMarshalizer
+	}
 
 	e := &dcdtNFTAddUri{
-		keyPrefix:             []byte(baseDCDTKeyPrefix),
-		dcdtStorageHandler:    dcdtStorageHandler,
-		funcGasCost:           funcGasCost,
-		mutExecution:          sync.RWMutex{},
-		globalSettingsHandler: globalSettingsHandler,
-		gasConfig:             gasConfig,
-		rolesHandler:          rolesHandler,
+		keyPrefix:              []byte(baseDCDTKeyPrefix),
+		dcdtStorageHandler:     dcdtStorageHandler,
+		funcGasCost:            funcGasCost,
+		mutExecution:           sync.RWMutex{},
+		globalSettingsHandler:  globalSettingsHandler,
+		gasConfig:              gasConfig,
+		rolesHandler:           rolesHandler,
+		enableEpochsHandler:    enableEpochsHandler,
+		BlockchainDataProvider: NewBlockchainDataProvider(),
+		marshaller:             marshaller,
 	}
 
 	e.baseActiveHandler.activeHandler = func() bool {
@@ -111,9 +122,25 @@ func (e *dcdtNFTAddUri) ProcessBuiltinFunction(
 		return nil, err
 	}
 
-	dcdtData.TokenMetaData.URIs = append(dcdtData.TokenMetaData.URIs, vmInput.Arguments[2:]...)
+	metaDataVersion, _, err := getMetaDataVersion(dcdtData, e.enableEpochsHandler, e.marshaller)
+	if err != nil {
+		return nil, err
+	}
 
-	_, err = e.dcdtStorageHandler.SaveDCDTNFTToken(acntSnd.AddressBytes(), acntSnd, dcdtTokenKey, nonce, dcdtData, true, vmInput.ReturnCallAfterError)
+	dcdtData.TokenMetaData.URIs = append(dcdtData.TokenMetaData.URIs, vmInput.Arguments[2:]...)
+	metaDataVersion.URIs = e.CurrentRound()
+
+	err = changeDcdtVersion(dcdtData, metaDataVersion, e.enableEpochsHandler, e.marshaller)
+	if err != nil {
+		return nil, err
+	}
+
+	properties := vmcommon.NftSaveArgs{
+		MustUpdateAllFields:         true,
+		IsReturnWithError:           vmInput.ReturnCallAfterError,
+		KeepMetaDataOnZeroLiquidity: true,
+	}
+	_, err = e.dcdtStorageHandler.SaveDCDTNFTToken(acntSnd.AddressBytes(), acntSnd, dcdtTokenKey, nonce, dcdtData, properties)
 	if err != nil {
 		return nil, err
 	}

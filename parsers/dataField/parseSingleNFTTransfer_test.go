@@ -8,13 +8,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-var addressPrefix = "moa"
+var addressPrefix = "drt"
 
 var pubKeyConv, _ = pubkeyConverter.NewBech32PubkeyConverter(32, addressPrefix)
 
-var sender, _ = pubKeyConv.Decode("moa1kqdm94ef5dr9nz3208rrsdzkgwkz53saj4t5chx26cm4hlq8qz8qd4r9nw")
-var receiver, _ = pubKeyConv.Decode("moa1kszzq4egxj5m3t22vt2s8vplmxmqrstghecmnk3tq9mn5fdy7pqq95yeqc")
-var receiverSC, _ = pubKeyConv.Decode("moa1qqqqqqqqqqqqqpgqp699jngundfqw07d8jzkepucvpzush6k3wvqfqn6lk")
+var sender, _ = pubKeyConv.Decode("drt1kqdm94ef5dr9nz3208rrsdzkgwkz53saj4t5chx26cm4hlq8qz8qa3jfvq")
+var receiver, _ = pubKeyConv.Decode("drt1kszzq4egxj5m3t22vt2s8vplmxmqrstghecmnk3tq9mn5fdy7pqq4s44lk")
+var receiverSC, _ = pubKeyConv.Decode("drt1qqqqqqqqqqqqqpgqp699jngundfqw07d8jzkepucvpzush6k3wvqeyzkqc")
 
 func TestDCDTNFTTransfer(t *testing.T) {
 	t.Parallel()
@@ -59,14 +59,14 @@ func TestDCDTNFTTransfer(t *testing.T) {
 	t.Run("NFTTransferWithSCCallOk", func(t *testing.T) {
 		t.Parallel()
 
-		dataField := []byte(`DCDTNFTTransfer@4c4b4641524d2d396431656138@1e47f1@018c88873c27e96447@000000000000000005001e2a1428dd1e3a5146b3960d9e0f4a50369904ee5483@636c61696d5265776172647350726f7879@0000000000000000050026751893d6789be9e5a99863ba9eeaa8088dd25f5483`)
+		dataField := []byte(`DCDTNFTTransfer@4c4b46524d2d396431656138@1e47f1@018c88873c27e96447@000000000000000005001e2a1428dd1e3a5146b3960d9e0f4a50369904ee5483@636c61696d5265776172647350726f7879@0000000000000000050026751893d6789be9e5a99863ba9eeaa8088dd25f5483`)
 		res := parser.Parse(dataField, sender, sender, 3)
 		rcv, _ := hex.DecodeString("000000000000000005001e2a1428dd1e3a5146b3960d9e0f4a50369904ee5483")
 		require.Equal(t, &ResponseParseData{
 			Operation:        "DCDTNFTTransfer",
 			Function:         "claimRewardsProxy",
 			DCDTValues:       []string{"28573236528289506375"},
-			Tokens:           []string{"LKFARM-9d1ea8-1e47f1"},
+			Tokens:           []string{"LKFRM-9d1ea8-1e47f1"},
 			Receivers:        [][]byte{rcv},
 			ReceiversShardID: []uint32{1},
 		}, res)

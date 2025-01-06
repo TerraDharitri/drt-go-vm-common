@@ -26,9 +26,11 @@ const (
 	FixGasRemainingForSaveKeyValueFlag          core.EnableEpochFlag = "FixGasRemainingForSaveKeyValueFlag"
 	IsChangeOwnerAddressCrossShardThroughSCFlag core.EnableEpochFlag = "IsChangeOwnerAddressCrossShardThroughSCFlag"
 	MigrateDataTrieFlag                         core.EnableEpochFlag = "MigrateDataTrieFlag"
+	DynamicDcdtFlag                             core.EnableEpochFlag = "DynamicDcdtFlag"
+	MOAInDCDTMultiTransferFlag                  core.EnableEpochFlag = "MOAInDCDTMultiTransferFlag"
 )
 
-// allFlags must have all flags used by drt-chain-vm-common-go in the current version
+// allFlags must have all flags used by mx-chain-vm-common-go in the current version
 var allFlags = []core.EnableEpochFlag{
 	GlobalMintBurnFlag,
 	DCDTTransferRoleFlag,
@@ -52,4 +54,6 @@ var allFlags = []core.EnableEpochFlag{
 	FixGasRemainingForSaveKeyValueFlag,
 	IsChangeOwnerAddressCrossShardThroughSCFlag,
 	MigrateDataTrieFlag,
+	DynamicDcdtFlag,
+	MOAInDCDTMultiTransferFlag,
 }

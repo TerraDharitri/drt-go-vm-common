@@ -3,8 +3,8 @@ module github.com/TerraDharitri/drt-go-vm-common
 go 1.20
 
 require (
-	github.com/TerraDharitri/drt-go-core v0.0.1
-	github.com/TerraDharitri/drt-go-logger v0.0.1
+	github.com/TerraDharitri/drt-go-core v0.0.3
+	github.com/TerraDharitri/drt-go-logger v0.0.2
 	github.com/mitchellh/mapstructure v1.5.0
 	github.com/stretchr/testify v1.10.0
 )

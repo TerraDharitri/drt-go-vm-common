@@ -111,11 +111,16 @@ func (e *dcdtNFTAddQuantity) ProcessBuiltinFunction(
 	value := big.NewInt(0).SetBytes(vmInput.Arguments[2])
 	dcdtData.Value.Add(dcdtData.Value, value)
 
-	_, err = e.dcdtStorageHandler.SaveDCDTNFTToken(acntSnd.AddressBytes(), acntSnd, dcdtTokenKey, nonce, dcdtData, false, vmInput.ReturnCallAfterError)
+	properties := vmcommon.NftSaveArgs{
+		MustUpdateAllFields:         false,
+		IsReturnWithError:           vmInput.ReturnCallAfterError,
+		KeepMetaDataOnZeroLiquidity: false,
+	}
+	_, err = e.dcdtStorageHandler.SaveDCDTNFTToken(acntSnd.AddressBytes(), acntSnd, dcdtTokenKey, nonce, dcdtData, properties)
 	if err != nil {
 		return nil, err
 	}
-	err = e.dcdtStorageHandler.AddToLiquiditySystemAcc(dcdtTokenKey, nonce, value)
+	err = e.dcdtStorageHandler.AddToLiquiditySystemAcc(dcdtTokenKey, dcdtData.Type, nonce, value, false)
 	if err != nil {
 		return nil, err
 	}
